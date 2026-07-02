@@ -1,9 +1,10 @@
 {
-  "generatedAt": "2026-06-26T15:29:43.414Z",
+  "generatedAt": "2026-07-02T22:00:04.325Z",
   "deckCount": 16,
   "decks": [
     {
       "name": "The Ruinous Powers",
+      "manaboxFolder": "The Ruinous Powers",
       "archideckId": 12426508,
       "commander": "Abaddon the Despoiler",
       "cards": [
@@ -590,6 +591,7 @@
     },
     {
       "name": "Faldorn wolf queen",
+      "manaboxFolder": "Faldorn wolf queen",
       "archideckId": 12368154,
       "commander": "Faldorn, Dread Wolf Herald",
       "cards": [
@@ -1179,6 +1181,7 @@
     },
     {
       "name": "Mardu Surge",
+      "manaboxFolder": "Mardu Surge",
       "archideckId": 12673678,
       "commander": "Zurgo Stormrender",
       "cards": [
@@ -1293,6 +1296,13 @@
           "isCommander": false,
           "type": "Land",
           "cmc": 0
+        },
+        {
+          "name": "Brotherhood Regalia",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Artifact",
+          "cmc": 2
         },
         {
           "name": "Caesar, Legion's Emperor",
@@ -1762,13 +1772,6 @@
           "cmc": 3
         },
         {
-          "name": "Whispersilk Cloak",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Artifact",
-          "cmc": 3
-        },
-        {
           "name": "Windbrisk Heights",
           "quantity": 1,
           "isCommander": false,
@@ -1814,6 +1817,7 @@
     },
     {
       "name": "Abzan Armor",
+      "manaboxFolder": "Abzan Armor",
       "archideckId": 12437001,
       "commander": "Felothar the Steadfast",
       "cards": [
@@ -2416,6 +2420,7 @@
     },
     {
       "name": "Jeskai Striker",
+      "manaboxFolder": "Jeskai Striker",
       "archideckId": 12437012,
       "commander": "Shiko and Narset, Unified",
       "cards": [
@@ -3044,6 +3049,7 @@
     },
     {
       "name": "Sultai Arisen",
+      "manaboxFolder": "Sultai Arisen",
       "archideckId": 13320369,
       "commander": "Teval, the Balanced Scale",
       "cards": [
@@ -3667,6 +3673,7 @@
     },
     {
       "name": "Temur Roar",
+      "manaboxFolder": "Temur Roar",
       "archideckId": 12436995,
       "commander": "Ureni of the Unwritten",
       "cards": [
@@ -4314,6 +4321,7 @@
     },
     {
       "name": "Counter Intelligence",
+      "manaboxFolder": "Counter Intelligence",
       "archideckId": 14835968,
       "commander": "Kilo, Apogee Mind",
       "cards": [
@@ -5012,6 +5020,7 @@
     },
     {
       "name": "World Shaper",
+      "manaboxFolder": "World Shaper",
       "archideckId": 14835982,
       "commander": "Hearthhull, the Worldseed",
       "cards": [
@@ -5028,13 +5037,6 @@
           "isCommander": false,
           "type": "Creature",
           "cmc": 6
-        },
-        {
-          "name": "Arcane Signet",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Artifact",
-          "cmc": 2
         },
         {
           "name": "Assassin's Trophy",
@@ -5121,6 +5123,13 @@
           "cmc": 0
         },
         {
+          "name": "Case of the Locked Hothouse",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Enchantment",
+          "cmc": 4
+        },
+        {
           "name": "Chaos Warp",
           "quantity": 1,
           "isCommander": false,
@@ -5129,6 +5138,13 @@
         },
         {
           "name": "Cinder Glade",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Land",
+          "cmc": 0
+        },
+        {
+          "name": "Command Beacon",
           "quantity": 1,
           "isCommander": false,
           "type": "Land",
@@ -5156,6 +5172,13 @@
           "cmc": 1
         },
         {
+          "name": "Crucible of Worlds",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Artifact",
+          "cmc": 3
+        },
+        {
           "name": "Dakmor Salvage",
           "quantity": 1,
           "isCommander": false,
@@ -5170,24 +5193,17 @@
           "cmc": 0
         },
         {
+          "name": "Diabolic Tutor",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Sorcery",
+          "cmc": 4
+        },
+        {
           "name": "Dryad of the Ilysian Grove",
           "quantity": 1,
           "isCommander": false,
           "type": "Enchantment Creature",
-          "cmc": 3
-        },
-        {
-          "name": "Elvish Mystic",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Creature",
-          "cmc": 1
-        },
-        {
-          "name": "Entish Restoration",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Instant",
           "cmc": 3
         },
         {
@@ -5196,6 +5212,13 @@
           "isCommander": false,
           "type": "Land",
           "cmc": 0
+        },
+        {
+          "name": "Exploration",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Enchantment",
+          "cmc": 1
         },
         {
           "name": "Exploration Broodship",
@@ -5220,13 +5243,20 @@
         },
         {
           "name": "Forest",
-          "quantity": 8,
+          "quantity": 5,
           "isCommander": false,
           "type": "Basic Land",
           "cmc": 0
         },
         {
           "name": "Ghost Quarter",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Land",
+          "cmc": 0
+        },
+        {
+          "name": "Glacial Chasm",
           "quantity": 1,
           "isCommander": false,
           "type": "Land",
@@ -5240,24 +5270,24 @@
           "cmc": 5
         },
         {
-          "name": "Golgari Charm",
+          "name": "Golgari Rot Farm",
           "quantity": 1,
           "isCommander": false,
-          "type": "Instant",
-          "cmc": 2
-        },
-        {
-          "name": "Harrow",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Instant",
-          "cmc": 3
+          "type": "Land",
+          "cmc": 0
         },
         {
           "name": "Hearthhull, the Worldseed",
           "quantity": 1,
           "isCommander": true,
           "type": "Legendary Artifact",
+          "cmc": 4
+        },
+        {
+          "name": "Icetill Explorer",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Creature",
           "cmc": 4
         },
         {
@@ -5268,18 +5298,18 @@
           "cmc": 2
         },
         {
-          "name": "Karplusan Forest",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Land",
-          "cmc": 0
-        },
-        {
           "name": "Korvold, Fae-Cursed King",
           "quantity": 1,
           "isCommander": false,
           "type": "Legendary Creature",
           "cmc": 5
+        },
+        {
+          "name": "Lively Dirge",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Sorcery",
+          "cmc": 2
         },
         {
           "name": "Llanowar Elves",
@@ -5296,11 +5326,25 @@
           "cmc": 0
         },
         {
+          "name": "Loot, Exuberant Explorer",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Legendary Creature",
+          "cmc": 3
+        },
+        {
           "name": "Lotus Cobra",
           "quantity": 1,
           "isCommander": false,
           "type": "Creature",
           "cmc": 2
+        },
+        {
+          "name": "Lotus Field",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Land",
+          "cmc": 0
         },
         {
           "name": "Maestros Theater",
@@ -5310,18 +5354,18 @@
           "cmc": 0
         },
         {
-          "name": "Mayhem Devil",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Creature",
-          "cmc": 3
-        },
-        {
           "name": "Mazirek, Kraul Death Priest",
           "quantity": 1,
           "isCommander": false,
           "type": "Legendary Creature",
           "cmc": 5
+        },
+        {
+          "name": "Mirrorpool",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Land",
+          "cmc": 0
         },
         {
           "name": "Moraug, Fury of Akoum",
@@ -5387,13 +5431,6 @@
           "cmc": 1
         },
         {
-          "name": "Perennial Behemoth",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Artifact Creature",
-          "cmc": 5
-        },
-        {
           "name": "Putrefy",
           "quantity": 1,
           "isCommander": false,
@@ -5408,17 +5445,17 @@
           "cmc": 6
         },
         {
-          "name": "Rampant Growth",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Sorcery",
-          "cmc": 2
-        },
-        {
           "name": "Ramunap Excavator",
           "quantity": 1,
           "isCommander": false,
           "type": "Creature",
+          "cmc": 3
+        },
+        {
+          "name": "Realms Uncharted",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Instant",
           "cmc": 3
         },
         {
@@ -5427,13 +5464,6 @@
           "isCommander": false,
           "type": "Land",
           "cmc": 0
-        },
-        {
-          "name": "Scouring Swarm",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Creature",
-          "cmc": 3
         },
         {
           "name": "Scute Swarm",
@@ -5485,11 +5515,11 @@
           "cmc": 1
         },
         {
-          "name": "Springbloom Druid",
+          "name": "Sowing Mycospawn",
           "quantity": 1,
           "isCommander": false,
           "type": "Creature",
-          "cmc": 3
+          "cmc": 4
         },
         {
           "name": "Springheart Nantuko",
@@ -5497,13 +5527,6 @@
           "isCommander": false,
           "type": "Enchantment Creature",
           "cmc": 2
-        },
-        {
-          "name": "Sulfurous Springs",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Land",
-          "cmc": 0
         },
         {
           "name": "Swamp",
@@ -5525,6 +5548,13 @@
           "isCommander": false,
           "type": "Legendary Creature",
           "cmc": 5
+        },
+        {
+          "name": "Tannuk, Memorial Ensign",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Legendary Creature",
+          "cmc": 3
         },
         {
           "name": "Tear Asunder",
@@ -5567,13 +5597,6 @@
           "isCommander": false,
           "type": "Creature",
           "cmc": 3
-        },
-        {
-          "name": "Titania, Protector of Argoth",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Legendary Creature",
-          "cmc": 5
         },
         {
           "name": "Twilight Mire",
@@ -5623,6 +5646,13 @@
           "cmc": 2
         },
         {
+          "name": "Yavimaya, Cradle of Growth",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Legendary Land",
+          "cmc": 0
+        },
+        {
           "name": "Zuran Orb",
           "quantity": 1,
           "isCommander": false,
@@ -5633,6 +5663,7 @@
     },
     {
       "name": "bats bats bats",
+      "manaboxFolder": "bats bats bats",
       "archideckId": 13077360,
       "commander": "Zoraline, Cosmos Caller",
       "cards": [
@@ -6214,6 +6245,7 @@
     },
     {
       "name": "Limit Break",
+      "manaboxFolder": "Limit Break",
       "archideckId": 16002195,
       "commander": "Cloud, Ex-SOLDIER",
       "cards": [
@@ -6879,6 +6911,7 @@
     },
     {
       "name": "Elves bite",
+      "manaboxFolder": "Elves bite",
       "archideckId": 17830016,
       "commander": "Voja, Jaws of the Conclave",
       "cards": [
@@ -7472,6 +7505,7 @@
     },
     {
       "name": "Blight Curse",
+      "manaboxFolder": "Blight Curse",
       "archideckId": 19808971,
       "commander": "Auntie Ool, Cursewretch",
       "cards": [
@@ -8074,6 +8108,7 @@
     },
     {
       "name": "Dance of the Elements",
+      "manaboxFolder": "Ashiling, the limitless",
       "archideckId": 19558777,
       "commander": "Ashling, the Limitless",
       "cards": [
@@ -8681,6 +8716,7 @@
     },
     {
       "name": "Space slivers",
+      "manaboxFolder": "Space slivers",
       "archideckId": 18917225,
       "commander": "The First Sliver",
       "cards": [
@@ -9381,6 +9417,7 @@
     },
     {
       "name": "Space slivers Budget",
+      "manaboxFolder": "Space slivers",
       "archideckId": 21985209,
       "commander": "The First Sliver",
       "cards": [
@@ -9404,13 +9441,6 @@
           "isCommander": false,
           "type": "Instant",
           "cmc": 2
-        },
-        {
-          "name": "Arcane Sanctum",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Land",
-          "cmc": 0
         },
         {
           "name": "Arcane Signet",
@@ -9504,6 +9534,13 @@
           "cmc": 0
         },
         {
+          "name": "City of Brass",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Land",
+          "cmc": 0
+        },
+        {
           "name": "Cleaving Sliver",
           "quantity": 1,
           "isCommander": false,
@@ -9579,13 +9616,6 @@
           "isCommander": false,
           "type": "Enchantment Creature",
           "cmc": 4
-        },
-        {
-          "name": "Exotic Orchard",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Land",
-          "cmc": 0
         },
         {
           "name": "Fabled Passage",
@@ -9840,6 +9870,13 @@
           "cmc": 3
         },
         {
+          "name": "Reflecting Pool",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Land",
+          "cmc": 0
+        },
+        {
           "name": "Reflections of Littjara",
           "quantity": 1,
           "isCommander": false,
@@ -9869,13 +9906,6 @@
         },
         {
           "name": "Sacred Foundry",
-          "quantity": 1,
-          "isCommander": false,
-          "type": "Land",
-          "cmc": 0
-        },
-        {
-          "name": "Savage Lands",
           "quantity": 1,
           "isCommander": false,
           "type": "Land",
@@ -9992,6 +10022,13 @@
           "isCommander": false,
           "type": "Creature",
           "cmc": 3
+        },
+        {
+          "name": "Tarnished Citadel",
+          "quantity": 1,
+          "isCommander": false,
+          "type": "Land",
+          "cmc": 0
         },
         {
           "name": "Tempered Sliver",

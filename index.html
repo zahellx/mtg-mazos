@@ -101,6 +101,43 @@
       font-size: 11.5px; padding: 3px 8px; border-radius: 999px;
       background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
     }
+    /* Tabs */
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab {
+      flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+      border-radius: 11px; padding: 10px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    }
+    .tab.active { background: var(--panel-2); color: var(--text); border-color: var(--accent); }
+
+    /* Cambios: secciones añadir / quitar */
+    .change-section h3 { font-size: 13px; color: var(--muted); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+    .change-row {
+      display: flex; align-items: center; gap: 11px; padding: 10px 11px; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px;
+    }
+    .change-row img { width: 40px; height: 56px; border-radius: 5px; object-fit: cover; background: var(--panel-2); flex-shrink: 0; }
+    .change-row .cr-info { flex: 1; min-width: 0; }
+    .change-row .cr-name { font-weight: 600; font-size: 14px; }
+    .change-row .cr-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .qbadge { flex-shrink: 0; font-weight: 700; font-size: 14px; border-radius: 9px; padding: 5px 10px; }
+    .qbadge.add { background: #16291f; color: var(--ok); }
+    .qbadge.rem { background: #3a1414; color: var(--bad); }
+
+    /* Precios */
+    .price-row {
+      display: flex; align-items: center; gap: 11px; padding: 10px 11px; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px;
+    }
+    .price-row img { width: 44px; height: 61px; border-radius: 5px; object-fit: cover; background: var(--panel-2); flex-shrink: 0; }
+    .price-row .p-info { flex: 1; min-width: 0; }
+    .price-row .p-name { font-weight: 600; font-size: 14px; }
+    .price-row .p-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .delta { flex-shrink: 0; text-align: right; }
+    .delta .pct { font-weight: 700; font-size: 15px; }
+    .delta .pct.up { color: var(--ok); }
+    .delta .pct.down { color: var(--bad); }
+    .delta .abs { font-size: 12px; color: var(--muted); }
+
     .empty { text-align: center; color: var(--muted); padding: 50px 20px; }
     .empty .big { font-size: 40px; margin-bottom: 12px; }
     .filters { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; }
@@ -134,6 +171,8 @@
         <p class="note">En ManaBox: <b>Ajustes → Exportar colección → CSV</b>, compártelo a este móvil y elígelo aquí. Se guarda solo en este dispositivo.</p>
       </div>
 
+      <button class="btn secondary" id="pricesNav" style="margin-bottom:16px;">📈 Movimientos de precio</button>
+
       <div class="filters">
         <input type="search" id="deckSearch" placeholder="Buscar mazo..." />
       </div>
@@ -142,11 +181,31 @@
 
     <!-- Vista de detalle de mazo -->
     <section id="deckView" class="hidden">
+      <div class="tabs">
+        <button class="tab active" data-tab="missing">Faltan</button>
+        <button class="tab" data-tab="changes">Cambios vs Archidekt</button>
+      </div>
       <div class="filters">
         <input type="search" id="cardSearch" placeholder="Buscar carta..." />
         <label class="toggle"><input type="checkbox" id="basicsToggle" /> Tierras básicas</label>
       </div>
       <div id="conflictList"></div>
+      <div id="changesList" class="hidden"></div>
+    </section>
+
+    <!-- Vista de movimientos de precio -->
+    <section id="priceView" class="hidden">
+      <div class="collection-bar">
+        <div class="title">📈 Movimientos de precio (Scryfall, EUR)</div>
+        <div id="priceStatus" class="meta" style="margin-bottom:10px;"></div>
+        <button class="btn" id="snapshotBtn">Actualizar precios ahora</button>
+        <p class="note">Guarda una “foto” de precios de tu colección. El histórico se construye desde hoy: necesitas al menos 2 fotos en días distintos para ver subidas/bajadas.</p>
+      </div>
+      <div class="filters">
+        <input type="search" id="priceSearch" placeholder="Buscar carta..." />
+        <label class="toggle"><input type="checkbox" id="downToggle" /> Bajadas</label>
+      </div>
+      <div id="priceList"></div>
     </section>
   </main>
 

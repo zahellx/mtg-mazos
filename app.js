@@ -1,11 +1,15 @@
 // ── Estado ────────────────────────────────────────────────────────────────
 const BASICS = new Set(["Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes",
   "Snow-Covered Plains", "Snow-Covered Island", "Snow-Covered Swamp", "Snow-Covered Mountain", "Snow-Covered Forest"]);
-const COLLECTION_KEY = "mtg-collection-v1";
+const COLLECTION_KEY = "mtg-collection-v1";   // {name: totalQty} (compat)
+const COLLECTION_DATA_KEY = "mtg-collection-data-v1"; // {byName, deckFolders, pool, printings}
 
-let decksData = null;       // { generatedAt, decks: [{name, commander, cards:[{name, quantity, type}]}] }
+let decksData = null;       // { generatedAt, decks: [{name, manaboxFolder, commander, cards:[{name, quantity, type}]}] }
 let usage = {};             // cardName -> { total, decks: [{name, quantity}] }
-let collection = {};        // cardName -> copias poseídas (total)
+let collection = {};        // cardName -> copias poseídas (total, todos los binders no-list)
+let deckFolders = {};       // folderName -> { cardName: qty }  (Binder Type = deck)
+let pool = {};              // cardName -> qty en binders NO-deck (archivador, bundles...)
+let printings = [];         // [{scryfallId, name, foil, qty, setCode, collectorNumber, purchasePrice}]
 let currentDeck = null;
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
@@ -16,6 +20,12 @@ const hasCollection = () => Object.keys(collection).length > 0;
 function loadCollection() {
   try { collection = JSON.parse(localStorage.getItem(COLLECTION_KEY)) || {}; }
   catch { collection = {}; }
+  try {
+    const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {};
+    deckFolders = d.deckFolders || {};
+    pool = d.pool || {};
+    printings = d.printings || [];
+  } catch { deckFolders = {}; pool = {}; printings = []; }
 }
 function ownedOf(name) {
   // ManaBox a veces guarda caras dobles como "A // B"; probamos el nombre completo y la cara frontal.
@@ -49,12 +59,22 @@ function importCSV(text) {
   const rows = parseCSV(text).filter((r) => r.length > 1);
   if (!rows.length) throw new Error("CSV vacío");
   const header = rows[0].map((h) => norm(h));
-  const idxName = header.indexOf("name");
-  const idxQty = header.indexOf("quantity");
-  const idxType = header.indexOf("binder type");
+  const col = (...names) => { for (const n of names) { const i = header.indexOf(n); if (i >= 0) return i; } return -1; };
+  const idxName = col("name");
+  const idxQty = col("quantity");
+  const idxType = col("binder type");
+  const idxBinder = col("binder name");
+  const idxFoil = col("foil");
+  const idxSet = col("set code", "set");
+  const idxCn = col("collector number");
+  const idxSid = col("scryfall id");
+  const idxPrice = col("purchase price", "price");
   if (idxName < 0 || idxQty < 0) throw new Error("No encuentro columnas Name/Quantity. ¿Es un export de ManaBox?");
 
-  const map = {};
+  const byName = {};
+  const folders = {};
+  const poolMap = {};
+  const prints = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const name = (r[idxName] || "").trim();
@@ -62,10 +82,63 @@ function importCSV(text) {
     const binderType = idxType >= 0 ? norm(r[idxType] || "") : "";
     if (binderType === "list") continue; // wishlists, no son cartas físicas
     const qty = parseInt(r[idxQty], 10) || 0;
-    map[name] = (map[name] || 0) + qty;
+    if (qty <= 0) continue;
+    const binderName = idxBinder >= 0 ? (r[idxBinder] || "").trim() : "";
+
+    byName[name] = (byName[name] || 0) + qty;
+    if (binderType === "deck") {
+      (folders[binderName] = folders[binderName] || {});
+      folders[binderName][name] = (folders[binderName][name] || 0) + qty;
+    } else {
+      poolMap[name] = (poolMap[name] || 0) + qty;
+    }
+
+    const sid = idxSid >= 0 ? (r[idxSid] || "").trim() : "";
+    if (sid) {
+      prints.push({
+        scryfallId: sid,
+        name,
+        foil: idxFoil >= 0 ? norm(r[idxFoil] || "") === "foil" : false,
+        qty,
+        setCode: idxSet >= 0 ? (r[idxSet] || "").trim() : "",
+        collectorNumber: idxCn >= 0 ? (r[idxCn] || "").trim() : "",
+        purchasePrice: idxPrice >= 0 ? parseFloat(r[idxPrice]) || 0 : 0,
+      });
+    }
   }
-  collection = map;
-  localStorage.setItem(COLLECTION_KEY, JSON.stringify(map));
+  collection = byName;
+  deckFolders = folders;
+  pool = poolMap;
+  printings = prints;
+  localStorage.setItem(COLLECTION_KEY, JSON.stringify(byName));
+  localStorage.setItem(COLLECTION_DATA_KEY, JSON.stringify({ deckFolders: folders, pool: poolMap, printings: prints }));
+}
+
+// ── Cambios por mazo: Archidekt vs carpeta física del mazo en ManaBox ─────────
+//   toAdd:    cartas que pide Archidekt y no están (o faltan) en la carpeta del mazo.
+//   toRemove: cartas que están en la carpeta del mazo pero no las pide Archidekt (o sobran).
+function changesForDeck(deck) {
+  const folder = deckFolders[deck.manaboxFolder || deck.name] || {};
+  const target = {};
+  deck.cards.forEach((c) => { target[c.name] = c.quantity; });
+
+  const toAdd = [], toRemove = [];
+  for (const c of deck.cards) {
+    const have = folder[c.name] || 0;
+    if (have < c.quantity) {
+      const n = c.quantity - have;
+      const inPool = pool[c.name] || 0; // ¿lo tienes suelto en archivador/bundles?
+      toAdd.push({ name: c.name, qty: n, type: c.type || "", basic: BASICS.has(c.name), inPool });
+    }
+  }
+  for (const [name, have] of Object.entries(folder)) {
+    const want = target[name] || 0;
+    if (have > want) toRemove.push({ name, qty: have - want, basic: BASICS.has(name) });
+  }
+  const bySeverity = (a, b) => Number(a.basic) - Number(b.basic) || a.name.localeCompare(b.name);
+  toAdd.sort(bySeverity);
+  toRemove.sort(bySeverity);
+  return { toAdd, toRemove, folderKnown: Object.keys(folder).length > 0 };
 }
 
 // ── Cálculo de uso entre mazos ────────────────────────────────────────────────
@@ -190,20 +263,83 @@ function renderConflicts() {
   }).join("");
 }
 
+let currentTab = "missing";
+
+function renderChanges() {
+  const wrap = $("changesList");
+  if (!hasCollection()) {
+    wrap.innerHTML = `<div class="empty"><div class="big">📦</div>
+      <div>Importa tu colección de ManaBox para comparar el mazo físico con Archidekt.</div></div>`;
+    return;
+  }
+  const { toAdd, toRemove, folderKnown } = changesForDeck(currentDeck);
+  const filter = norm($("cardSearch").value);
+  const showBasics = $("basicsToggle").checked;
+  const flt = (arr) => arr.filter((c) => (showBasics || !c.basic) && (!filter || norm(c.name).includes(filter)));
+  const add = flt(toAdd), rem = flt(toRemove);
+
+  if (!folderKnown) {
+    wrap.innerHTML = `<div class="empty"><div class="big">🗂️</div>
+      <div>No encuentro una carpeta física llamada <b>“${escapeHtml(currentDeck.manaboxFolder || currentDeck.name)}”</b> en tu ManaBox (Binder Type = deck).<br>
+      Crea esa carpeta en ManaBox con las cartas del mazo para poder comparar.</div></div>`;
+    return;
+  }
+  if (!add.length && !rem.length) {
+    wrap.innerHTML = `<div class="empty"><div class="big">✅</div><div>El mazo físico coincide con Archidekt.</div></div>`;
+    return;
+  }
+  const row = (c, kind) => `
+    <div class="change-row">
+      <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
+      <div class="cr-info">
+        <div class="cr-name">${escapeHtml(c.name)}</div>
+        <div class="cr-sub">${kind === "add"
+          ? (c.basic ? "Tierra básica" : (c.inPool ? `Tienes ${c.inPool} suelta(s) en tu pool` : "No la tienes suelta"))
+          : "Sobra en la carpeta del mazo"}</div>
+      </div>
+      <div class="qbadge ${kind === "add" ? "add" : "rem"}">${kind === "add" ? "+" : "−"}${c.qty}</div>
+    </div>`;
+  wrap.innerHTML =
+    (add.length ? `<div class="change-section"><h3>➕ Meter en el mazo (${add.length})</h3>${add.map((c) => row(c, "add")).join("")}</div>` : "") +
+    (rem.length ? `<div class="change-section"><h3>➖ Sacar del mazo (${rem.length})</h3>${rem.map((c) => row(c, "rem")).join("")}</div>` : "");
+}
+
+function renderDeckTab() {
+  const missing = currentTab === "missing";
+  $("conflictList").classList.toggle("hidden", !missing);
+  $("changesList").classList.toggle("hidden", missing);
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === currentTab));
+  if (missing) renderConflicts(); else renderChanges();
+}
+
 function openDeck(deck) {
   currentDeck = deck;
+  currentTab = "missing";
   $("homeView").classList.add("hidden");
+  $("priceView").classList.add("hidden");
   $("deckView").classList.remove("hidden");
   $("backBtn").classList.remove("hidden");
   $("title").textContent = deck.name;
   $("cardSearch").value = "";
   window.scrollTo(0, 0);
-  renderConflicts();
+  renderDeckTab();
+}
+
+function openPrices() {
+  currentDeck = null;
+  $("homeView").classList.add("hidden");
+  $("deckView").classList.add("hidden");
+  $("priceView").classList.remove("hidden");
+  $("backBtn").classList.remove("hidden");
+  $("title").textContent = "Movimientos de precio";
+  window.scrollTo(0, 0);
+  renderPrices();
 }
 
 function goHome() {
   currentDeck = null;
   $("deckView").classList.add("hidden");
+  $("priceView").classList.add("hidden");
   $("homeView").classList.remove("hidden");
   $("backBtn").classList.add("hidden");
   $("title").textContent = "Mis Mazos MTG";
@@ -212,6 +348,129 @@ function goHome() {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ── Price movers: fotos de precio de Scryfall guardadas localmente ──────────────
+const PRICE_SNAP_KEY = "mtg-price-snapshots-v1";
+const WINDOW_DAYS = 14;   // comparar hoy vs ~N días atrás
+const MIN_PRICE = 0.5;    // ignora cartas por debajo de esto (ruido)
+const MIN_PCT = 5;        // cambio mínimo en % para mostrar
+const MIN_ABS = 0.3;      // ...o cambio mínimo en € (basta uno)
+const MAX_SNAPS = 30;     // fotos que conservamos
+
+const dateStr = (dt) => { const p = (n) => String(n).padStart(2, "0"); return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`; };
+function minusDays(s, days) { const [y, m, d] = s.split("-").map(Number); const t = Date.UTC(y, m - 1, d) - days * 86400000; return dateStr(new Date(t)); }
+function loadSnaps() { try { return JSON.parse(localStorage.getItem(PRICE_SNAP_KEY)) || {}; } catch { return {}; } }
+const keyOf = (p) => `${p.scryfallId}|${p.foil ? "f" : "n"}`;
+
+async function takeSnapshot(onProgress) {
+  const sids = [...new Set(printings.map((p) => p.scryfallId))];
+  if (!sids.length) throw new Error("No hay printings con Scryfall ID. Reimporta el CSV de ManaBox (debe incluir la columna Scryfall ID).");
+  const priceById = {};
+  for (let i = 0; i < sids.length; i += 75) {
+    const batch = sids.slice(i, i + 75);
+    const res = await fetch("https://api.scryfall.com/cards/collection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ identifiers: batch.map((id) => ({ id })) }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      (data.data || []).forEach((c) => { priceById[c.id] = { n: parseFloat(c.prices?.eur) || 0, f: parseFloat(c.prices?.eur_foil) || 0 }; });
+    }
+    if (onProgress) onProgress(Math.min(i + 75, sids.length), sids.length);
+    if (i + 75 < sids.length) await new Promise((r) => setTimeout(r, 100));
+  }
+  const snap = {};
+  for (const p of printings) {
+    const pr = priceById[p.scryfallId];
+    if (!pr) continue;
+    const price = p.foil ? pr.f : pr.n;
+    if (price >= MIN_PRICE) snap[keyOf(p)] = Math.round(price * 100) / 100;
+  }
+  const snaps = loadSnaps();
+  snaps[dateStr(new Date())] = snap;
+  const dates = Object.keys(snaps).sort();
+  while (dates.length > MAX_SNAPS) delete snaps[dates.shift()];
+  localStorage.setItem(PRICE_SNAP_KEY, JSON.stringify(snaps));
+  return snap;
+}
+
+function computeMovers() {
+  const snaps = loadSnaps();
+  const dates = Object.keys(snaps).sort();
+  if (dates.length < 2) return { rows: [], dates };
+  const nowDate = dates[dates.length - 1];
+  const now = snaps[nowDate];
+  const refTarget = minusDays(nowDate, WINDOW_DAYS);
+  let refDate = dates[0];
+  for (const d of dates) { if (d < nowDate && d <= refTarget) refDate = d; }
+  if (refDate === nowDate) refDate = dates[0];
+  const ref = snaps[refDate];
+
+  const qty = {}, meta = {};
+  for (const p of printings) {
+    const k = keyOf(p);
+    qty[k] = (qty[k] || 0) + p.qty;
+    if (!meta[k]) meta[k] = { name: p.name, foil: p.foil, setCode: p.setCode, scryfallId: p.scryfallId };
+  }
+  const rows = [];
+  for (const k of Object.keys(now)) {
+    const pnow = now[k], pref = ref[k];
+    if (!pref || pref <= 0 || pnow < MIN_PRICE) continue;
+    const abs = pnow - pref, pct = (abs / pref) * 100;
+    if (Math.abs(pct) < MIN_PCT && Math.abs(abs) < MIN_ABS) continue;
+    rows.push({ ...(meta[k] || {}), priceNow: pnow, priceRef: pref, abs, pct, qty: qty[k] || 1 });
+  }
+  return { rows, dates, nowDate, refDate };
+}
+
+function renderPrices() {
+  const status = $("priceStatus");
+  const snaps = loadSnaps();
+  const dates = Object.keys(snaps).sort();
+  if (!hasCollection()) {
+    status.textContent = "Importa tu colección primero.";
+    $("priceList").innerHTML = "";
+    return;
+  }
+  if (!dates.length) {
+    status.textContent = "Aún no hay fotos de precio. Pulsa “Actualizar precios ahora”.";
+  } else if (dates.length === 1) {
+    status.innerHTML = `1 foto (${dates[0]}). Necesitas otra en un día distinto para ver movimientos.`;
+  } else {
+    const { nowDate, refDate } = computeMovers();
+    status.innerHTML = `${dates.length} fotos · comparando <b>${refDate}</b> → <b>${nowDate}</b>`;
+  }
+
+  const { rows } = computeMovers();
+  const down = $("downToggle").checked;
+  const filter = norm($("priceSearch").value);
+  let list = rows.filter((r) => (down ? r.pct < 0 : r.pct > 0) && (!filter || norm(r.name).includes(filter)));
+  list.sort((a, b) => (down ? (a.abs * a.qty) - (b.abs * b.qty) : (b.abs * b.qty) - (a.abs * a.qty)));
+
+  const wrap = $("priceList");
+  if (!list.length) {
+    wrap.innerHTML = dates.length >= 2
+      ? `<div class="empty"><div class="big">🤷</div><div>Sin ${down ? "bajadas" : "subidas"} relevantes entre las dos fotos.</div></div>`
+      : "";
+    return;
+  }
+  wrap.innerHTML = list.map((r) => {
+    const cls = r.pct >= 0 ? "up" : "down";
+    const sign = r.pct >= 0 ? "+" : "";
+    return `<div class="price-row">
+      <img loading="lazy" src="https://api.scryfall.com/cards/${encodeURIComponent(r.scryfallId)}?format=image&version=small" alt="${escapeHtml(r.name)}" onerror="this.style.visibility='hidden'" />
+      <div class="p-info">
+        <div class="p-name">${escapeHtml(r.name)}${r.foil ? " ✨" : ""}</div>
+        <div class="p-sub">${escapeHtml(r.setCode.toUpperCase())} · ${r.priceRef.toFixed(2)}€ → ${r.priceNow.toFixed(2)}€ · x${r.qty}</div>
+      </div>
+      <div class="delta">
+        <div class="pct ${cls}">${sign}${r.pct.toFixed(0)}%</div>
+        <div class="abs">${sign}${r.abs.toFixed(2)}€</div>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 // Consume el CSV recibido vía "Compartir" de Android (Share Target).
@@ -269,7 +528,7 @@ async function init() {
         importCSV(reader.result);
         renderCollectionStatus();
         renderDecks($("deckSearch").value);
-        if (currentDeck) renderConflicts();
+        if (currentDeck) renderDeckTab();
         alert(`✅ Colección importada: ${Object.keys(collection).length} cartas distintas.`);
       } catch (err) {
         alert("❌ " + err.message);
@@ -281,8 +540,30 @@ async function init() {
 
   $("backBtn").onclick = goHome;
   $("deckSearch").oninput = (e) => renderDecks(e.target.value);
-  $("cardSearch").oninput = renderConflicts;
-  $("basicsToggle").onchange = renderConflicts;
+  $("cardSearch").oninput = () => renderDeckTab();
+  $("basicsToggle").onchange = () => renderDeckTab();
+
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; renderDeckTab(); };
+  });
+
+  $("pricesNav").onclick = openPrices;
+  $("priceSearch").oninput = renderPrices;
+  $("downToggle").onchange = renderPrices;
+  $("snapshotBtn").onclick = async () => {
+    const btn = $("snapshotBtn");
+    btn.disabled = true;
+    const label = btn.textContent;
+    try {
+      await takeSnapshot((done, total) => { btn.textContent = `Consultando precios… ${done}/${total}`; });
+      renderPrices();
+    } catch (err) {
+      alert("❌ " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  };
 }
 
 if ("serviceWorker" in navigator) {

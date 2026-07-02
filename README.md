@@ -15,6 +15,11 @@ Para un mazo, una carta **falta** si tienes menos copias en tu colección que el
 
 Las tierras básicas se ocultan por defecto (toggle para mostrarlas).
 
+## Otras vistas
+
+- **Cambios vs Archidekt** (pestaña dentro de cada mazo): compara la carpeta física del mazo en ManaBox (`Binder Type = deck`) con la lista de Archidekt y dice qué **meter** (➕) y qué **sacar** (➖) para dejarlo igual. Para las cartas a meter, avisa si las tienes sueltas en tu pool.
+- **Movimientos de precio** (botón en la portada): guarda "fotos" de precio de tu colección desde Scryfall (EUR) y muestra las que más han subido/bajado. El histórico se construye desde que empiezas a usarla (necesita ≥2 fotos en días distintos). Requiere que el CSV de ManaBox incluya la columna `Scryfall ID`.
+
 ## Puesta en marcha (una vez)
 
 1. Crea un repo **público** en GitHub y sube este contenido.

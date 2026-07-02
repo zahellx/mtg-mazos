@@ -33,7 +33,13 @@ async function fetchDeck(deck) {
 
     const cards = Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
     const commander = cards.find((c) => c.isCommander)?.name || null;
-    return { name: deck.name || data.name, archideckId: deck.archideck_id, commander, cards };
+    return {
+        name: deck.name || data.name,
+        manaboxFolder: deck.manaboxFolder || deck.name || data.name,
+        archideckId: deck.archideck_id,
+        commander,
+        cards,
+    };
 }
 
 /**

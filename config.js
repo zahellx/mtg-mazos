@@ -17,9 +17,10 @@ const DECKS = [
     { name: "Limit Break", archideck_id: 16002195 },
     { name: "Elves bite", archideck_id: 17830016 },
     { name: "Blight Curse", archideck_id: 19808971 },
-    { name: "Dance of the Elements", archideck_id: 19558777 },
+    // manaboxFolder: nombre de la carpeta física en ManaBox si difiere del nombre del mazo.
+    { name: "Dance of the Elements", archideck_id: 19558777, manaboxFolder: "Ashiling, the limitless" },
     { name: "Space slivers", archideck_id: 18917225 },
-    { name: "Space slivers Budget", archideck_id: 21985209 },
+    { name: "Space slivers Budget", archideck_id: 21985209, manaboxFolder: "Space slivers" },
 ];
 
 // Categorías de Archidekt que NO cuentan como parte del mazo jugable.
