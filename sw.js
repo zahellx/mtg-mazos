@@ -24,6 +24,21 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
 
+  // Share Target (Android): ManaBox comparte el CSV -> lo guardamos y abrimos la app.
+  if (e.request.method === "POST" && url.pathname.endsWith("/share-target")) {
+    e.respondWith((async () => {
+      try {
+        const form = await e.request.formData();
+        const file = form.get("csv");
+        const text = file ? await file.text() : "";
+        const cache = await caches.open(CACHE);
+        await cache.put("shared-csv", new Response(text, { headers: { "Content-Type": "text/csv" } }));
+      } catch (_) { /* ignore */ }
+      return Response.redirect("./index.html?shared=1", 303);
+    })());
+    return;
+  }
+
   // Imágenes de Scryfall: cache-first (se reutilizan offline una vez vistas).
   if (url.hostname.endsWith("scryfall.com") || url.hostname.endsWith("scryfall.io")) {
     e.respondWith(

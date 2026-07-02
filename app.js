@@ -214,9 +214,32 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// Consume el CSV recibido vía "Compartir" de Android (Share Target).
+async function consumeSharedCSV() {
+  try {
+    const res = await caches.match("shared-csv");
+    if (!res) return false;
+    const text = await res.text();
+    // Borra la entrada temporal de todas las cachés donde pueda estar.
+    for (const name of await caches.keys()) {
+      const c = await caches.open(name);
+      await c.delete("shared-csv");
+    }
+    if (text && text.trim()) { importCSV(text); return true; }
+  } catch (_) { /* ignore */ }
+  return false;
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   loadCollection();
+
+  // Si venimos de "Compartir" desde ManaBox, importa el CSV recibido.
+  let sharedImported = false;
+  if (new URLSearchParams(location.search).get("shared")) {
+    sharedImported = await consumeSharedCSV();
+    history.replaceState(null, "", location.pathname);
+  }
   try {
     const res = await fetch("data/decks-data.json", { cache: "no-cache" });
     decksData = await res.json();
@@ -231,6 +254,10 @@ async function init() {
 
   renderCollectionStatus();
   renderDecks();
+
+  if (sharedImported) {
+    setTimeout(() => alert(`✅ Colección importada desde ManaBox: ${Object.keys(collection).length} cartas distintas.`), 100);
+  }
 
   $("importBtn").onclick = () => $("csvInput").click();
   $("csvInput").onchange = (e) => {
