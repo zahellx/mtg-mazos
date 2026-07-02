@@ -5,7 +5,6 @@ const COLLECTION_KEY = "mtg-collection-v1";   // {name: totalQty} (compat)
 const COLLECTION_DATA_KEY = "mtg-collection-data-v1"; // {byName, deckFolders, pool, printings}
 
 let decksData = null;       // { generatedAt, decks: [{name, manaboxFolder, commander, cards:[{name, quantity, type}]}] }
-let usage = {};             // cardName -> { total, decks: [{name, quantity}] }
 let collection = {};        // cardName -> copias poseídas (total, todos los binders no-list)
 let deckFolders = {};       // folderName -> { cardName: qty }  (Binder Type = deck)
 let pool = {};              // cardName -> qty en binders NO-deck (archivador, bundles...)
@@ -141,45 +140,52 @@ function changesForDeck(deck) {
   return { toAdd, toRemove, folderKnown: Object.keys(folder).length > 0 };
 }
 
-// ── Cálculo de uso entre mazos ────────────────────────────────────────────────
-function computeUsage() {
-  usage = {};
+// Mapa carpeta física de ManaBox -> nombre(s) de mazo(s) que la usan.
+let folderToDeckNames = {};
+function computeFolderMap() {
+  folderToDeckNames = {};
   for (const deck of decksData.decks) {
-    for (const card of deck.cards) {
-      if (!usage[card.name]) usage[card.name] = { total: 0, decks: [] };
-      usage[card.name].total += card.quantity;
-      usage[card.name].decks.push({ name: deck.name, quantity: card.quantity });
-    }
+    const f = deck.manaboxFolder || deck.name;
+    (folderToDeckNames[f] = folderToDeckNames[f] || []).push(deck.name);
   }
 }
+const folderLabel = (folderName) => (folderToDeckNames[folderName] || []).join(" / ") || folderName;
+const myFolderOf = (deck) => deckFolders[deck.manaboxFolder || deck.name] || {};
 
-// Para un mazo: cartas que le FALTAN (no tienes copias libres para él) y dónde están.
-//   - location "in-decks": tienes copia(s) pero están en otros mazos -> dónde buscarla.
-//   - location "nowhere":  no tienes la carta en la colección -> no está en ningún mazo.
+// Para un mazo: cartas que le FALTAN físicamente (las pide Archidekt pero no están
+// en su carpeta de ManaBox) y DÓNDE están físicamente (en qué otra carpeta de mazo).
+//   - location "in-decks": está físicamente en la carpeta de otro(s) mazo(s).
+//   - location "pool":     la tienes suelta en un binder que no es de mazo.
+//   - location "nowhere":  no la tienes en ningún sitio.
 function missingForDeck(deck, includeBasics) {
+  const myFolderName = deck.manaboxFolder || deck.name;
+  const myFolder = deckFolders[myFolderName] || {};
   const out = [];
   for (const card of deck.cards) {
     if (!includeBasics && BASICS.has(card.name)) continue;
-    const u = usage[card.name];
-    const owned = ownedOf(card.name);
-    if (owned >= u.total) continue;               // tienes copias de sobra para todos los mazos -> no falta
-    const others = u.decks.filter((d) => d.name !== deck.name);
-    out.push({
-      name: card.name,
-      type: card.type || "",
-      owned,
-      needed: u.total,
-      others,
-      location: owned <= 0 ? "nowhere" : (others.length ? "in-decks" : "short"),
-    });
+    const have = myFolder[card.name] || 0;
+    if (have >= card.quantity) continue;          // está físicamente en este mazo -> no falta
+    const needed = card.quantity - have;
+
+    // ¿En qué otras carpetas de mazo está físicamente?
+    const locations = [];
+    for (const [folderName, cards] of Object.entries(deckFolders)) {
+      if (folderName === myFolderName) continue;
+      const q = cards[card.name] || 0;
+      if (q > 0) locations.push({ folder: folderName, name: folderLabel(folderName), qty: q });
+    }
+    const inPool = pool[card.name] || 0;
+    const location = locations.length ? "in-decks" : (inPool > 0 ? "pool" : "nowhere");
+    out.push({ name: card.name, type: card.type || "", needed, locations, inPool, location });
   }
-  // Primero las que sí puedes localizar en otro mazo, luego por nombre
-  const rank = { "in-decks": 0, short: 1, nowhere: 2 };
+  const rank = { "in-decks": 0, pool: 1, nowhere: 2 };
   out.sort((a, b) => (rank[a.location] - rank[b.location]) || a.name.localeCompare(b.name));
   return out;
 }
 
+// Nº de cartas que faltan; null si no hay carpeta física de este mazo en ManaBox.
 function deckMissingCount(deck) {
+  if (Object.keys(myFolderOf(deck)).length === 0) return null;
   return missingForDeck(deck, false).length;
 }
 
@@ -206,11 +212,10 @@ function renderDecks(filter = "") {
   const decks = decksData.decks
     .filter((d) => !f || norm(d.name).includes(f))
     .slice()
-    .sort((a, b) => deckMissingCount(b) - deckMissingCount(a) || a.name.localeCompare(b.name));
+    .sort((a, b) => (deckMissingCount(b) || 0) - (deckMissingCount(a) || 0) || a.name.localeCompare(b.name));
 
   for (const deck of decks) {
-    const known = hasCollection();
-    const count = known ? deckMissingCount(deck) : null;
+    const count = hasCollection() ? deckMissingCount(deck) : null; // null = sin carpeta física
     const el = document.createElement("div");
     el.className = "deck-card";
     el.innerHTML = `
@@ -218,7 +223,7 @@ function renderDecks(filter = "") {
         <div class="name">${escapeHtml(deck.name)}</div>
         <div class="sub">${deck.commander ? "👑 " + escapeHtml(deck.commander) : deck.cards.length + " cartas"}</div>
       </div>
-      <div class="badge ${!known ? "" : count ? "some" : "zero"}">${!known ? "–" : count || "✓"}</div>`;
+      <div class="badge ${count == null ? "" : count ? "some" : "zero"}">${count == null ? "–" : count || "✓"}</div>`;
     el.onclick = () => openDeck(deck);
     grid.appendChild(el);
   }
@@ -237,26 +242,32 @@ function renderConflicts() {
       <button class="btn" style="margin-top:16px;max-width:280px" onclick="document.getElementById('csvInput').click()">Importar colección (CSV)</button></div>`;
     return;
   }
+  if (Object.keys(myFolderOf(currentDeck)).length === 0) {
+    wrap.innerHTML = `<div class="empty"><div class="big">🗂️</div>
+      <div>No encuentro la carpeta física <b>“${escapeHtml(currentDeck.manaboxFolder || currentDeck.name)}”</b> en tu ManaBox (Binder Type = deck).<br>
+      Crea esa carpeta en ManaBox con las cartas de este mazo para poder comparar.</div></div>`;
+    return;
+  }
   if (!list.length) {
     wrap.innerHTML = `<div class="empty"><div class="big">✅</div>
-      <div>No le falta ninguna carta a este mazo${Object.keys(collection).length ? "" : ".<br>(Importa tu colección para que el cálculo sea real)"}</div></div>`;
+      <div>No le falta ninguna carta a este mazo: todo está en su carpeta física.</div></div>`;
     return;
   }
   wrap.innerHTML = list.map((c) => {
     let locHtml;
     if (c.location === "in-decks") {
       locHtml = `<div class="c-counts"><span class="loc">📍 Está en:</span></div>
-        <div class="chips">${c.others.map((o) => `<span class="chip">${escapeHtml(o.name)}${o.quantity > 1 ? " ×" + o.quantity : ""}</span>`).join("")}</div>`;
-    } else if (c.location === "nowhere") {
+        <div class="chips">${c.locations.map((o) => `<span class="chip">${escapeHtml(o.name)}${o.qty > 1 ? " ×" + o.qty : ""}</span>`).join("")}</div>`;
+    } else if (c.location === "pool") {
+      locHtml = `<div class="c-counts"><span class="loc warn">📦 La tienes suelta en tu colección (${c.inPool}) — no en un mazo</span></div>`;
+    } else {
       locHtml = `<div class="c-counts"><span class="loc bad">🛒 No la tienes — no está en ningún mazo</span></div>`;
-    } else { // short: solo este mazo la usa, pero te faltan copias
-      locHtml = `<div class="c-counts"><span class="loc warn">⚠️ Te faltan ${c.needed - c.owned} copia(s) — no está en ningún otro mazo</span></div>`;
     }
     return `
     <div class="conflict">
       <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
       <div class="c-info">
-        <div class="c-name">${escapeHtml(c.name)}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name">${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
@@ -506,7 +517,7 @@ async function init() {
     $("deckGrid").innerHTML = `<div class="empty"><div class="big">⚠️</div><div>No pude cargar los mazos.<br>${escapeHtml(e.message)}</div></div>`;
     return;
   }
-  computeUsage();
+  computeFolderMap();
 
   const d = new Date(decksData.generatedAt);
   $("syncMeta").textContent = `Mazos de Archidekt · actualizados ${d.toLocaleDateString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
