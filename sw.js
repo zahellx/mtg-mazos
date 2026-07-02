@@ -1,14 +1,20 @@
 // Service worker: cachea el app shell para que funcione offline.
 // El JSON de mazos se sirve network-first (para coger lo último que publicó el Action),
 // con fallback a caché si no hay red.
-const CACHE = "mtg-mazos-v3";
+const CACHE = "mtg-mazos-v4";
 const SHELL = [
   "./",
   "./index.html",
   "./app.js",
+  "./deck-builder.html",
+  "./deck-builder.js",
+  "./styles.css",
   "./manifest.webmanifest",
+  "./manifest-deckbuilder.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  "./icons/icon-db-192.png",
+  "./icons/icon-db-512.png",
 ];
 
 self.addEventListener("install", (e) => {
