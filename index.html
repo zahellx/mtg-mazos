@@ -48,10 +48,16 @@
       </div>
       <div class="filters">
         <input type="search" id="cardSearch" placeholder="Buscar carta..." />
-        <label class="toggle"><input type="checkbox" id="basicsToggle" /> Tierras básicas</label>
+        <label class="toggle"><input type="checkbox" id="basicsToggle" /> Básicas</label>
+        <label class="toggle"><input type="checkbox" id="hideOrdered" /> Ocultar pedidas</label>
       </div>
       <div id="conflictList"></div>
       <div id="changesList" class="hidden"></div>
+      <div id="selectionBar" class="selection-bar hidden">
+        <span class="selc"><span id="selCount">0</span> sel.</span>
+        <button type="button" class="cm" id="copyCardmarket">📋 Cardmarket</button>
+        <button type="button" class="ord" id="markOrdered">🛒 Pedidas</button>
+      </div>
     </section>
 
     <!-- Vista de movimientos de precio -->
@@ -70,6 +76,7 @@
     </section>
   </main>
 
+  <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

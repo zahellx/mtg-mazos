@@ -3,12 +3,15 @@ const BASICS = new Set(["Plains", "Island", "Swamp", "Mountain", "Forest", "Wast
   "Snow-Covered Plains", "Snow-Covered Island", "Snow-Covered Swamp", "Snow-Covered Mountain", "Snow-Covered Forest"]);
 const COLLECTION_KEY = "mtg-collection-v1";   // {name: totalQty} (compat)
 const COLLECTION_DATA_KEY = "mtg-collection-data-v1"; // {byName, deckFolders, pool, printings}
+const ORDERS_KEY = "mtg-orders-v1";           // {cardName: true} cartas pedidas
 
 let decksData = null;       // { generatedAt, decks: [{name, manaboxFolder, commander, cards:[{name, quantity, type}]}] }
 let collection = {};        // cardName -> copias poseídas (total, todos los binders no-list)
 let deckFolders = {};       // folderName -> { cardName: qty }  (Binder Type = deck)
 let pool = {};              // cardName -> qty en binders NO-deck (archivador, bundles...)
 let printings = [];         // [{scryfallId, name, foil, qty, setCode, collectorNumber, purchasePrice}]
+let orders = {};            // cardName -> true (marcada como pedida)
+let selected = new Set();   // selección actual en la vista "Faltan"
 let currentDeck = null;
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
@@ -25,6 +28,11 @@ function loadCollection() {
     pool = d.pool || {};
     printings = d.printings || [];
   } catch { deckFolders = {}; pool = {}; printings = []; }
+  try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
+}
+function saveOrders() {
+  localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+  if (window.mtgSync) window.mtgSync.afterImport();
 }
 function ownedOf(name) {
   // ManaBox a veces guarda caras dobles como "A // B"; probamos el nombre completo y la cara frontal.
@@ -229,13 +237,18 @@ function renderDecks(filter = "") {
   }
 }
 
+let lastMissingList = []; // faltantes visibles actuales (para Cardmarket / pedidas)
+
 function renderConflicts() {
   const includeBasics = $("basicsToggle").checked;
   const filter = norm($("cardSearch").value);
   let list = missingForDeck(currentDeck, includeBasics);
   if (filter) list = list.filter((c) => norm(c.name).includes(filter));
+  if ($("hideOrdered").checked) list = list.filter((c) => !orders[c.name]);
+  lastMissingList = list;
 
   const wrap = $("conflictList");
+  $("selectionBar").classList.add("hidden");
   if (!hasCollection()) {
     wrap.innerHTML = `<div class="empty"><div class="big">📦</div>
       <div>Importa tu colección de ManaBox para ver qué cartas le faltan a este mazo y en cuáles están.</div>
@@ -263,15 +276,63 @@ function renderConflicts() {
     } else {
       locHtml = `<div class="c-counts"><span class="loc bad">🛒 No la tienes — no está en ningún mazo</span></div>`;
     }
+    const isOrdered = !!orders[c.name];
     return `
-    <div class="conflict">
+    <div class="conflict${isOrdered ? " ordered" : ""}">
+      <input type="checkbox" class="sel" data-name="${escapeHtml(c.name)}" ${selected.has(c.name) ? "checked" : ""} />
       <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
       <div class="c-info">
-        <div class="c-name">${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name">${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : ""}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
   }).join("");
+
+  wrap.querySelectorAll(".sel").forEach((cb) => {
+    cb.onchange = () => { cb.checked ? selected.add(cb.dataset.name) : selected.delete(cb.dataset.name); updateSelectionBar(); };
+  });
+  updateSelectionBar();
+}
+
+function updateSelectionBar() {
+  // Solo cuentan las seleccionadas que siguen visibles.
+  const visible = new Set(lastMissingList.map((c) => c.name));
+  selected = new Set([...selected].filter((n) => visible.has(n)));
+  const bar = $("selectionBar");
+  if (selected.size === 0 || currentTab !== "missing") { bar.classList.add("hidden"); return; }
+  $("selCount").textContent = selected.size;
+  bar.classList.remove("hidden");
+}
+
+function selectedNeeded() {
+  // Cantidad a pedir de cada seleccionada (según lo que falta en la lista actual).
+  const byName = {};
+  lastMissingList.forEach((c) => { if (selected.has(c.name)) byName[c.name] = c.needed; });
+  return byName;
+}
+
+async function copyToCardmarket() {
+  const need = selectedNeeded();
+  const lines = Object.entries(need).map(([name, qty]) => `${qty} ${name}`);
+  if (!lines.length) return;
+  const text = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    alert(`📋 Copiado (${lines.length} cartas). Pégalo en Cardmarket → Want List → “Añadir varios artículos”.`);
+  } catch {
+    // Fallback si clipboard falla (contexto no seguro): mostrar para copiar a mano.
+    prompt("Copia esta lista para Cardmarket:", text);
+  }
+}
+
+function markSelectedOrdered() {
+  const names = [...selected];
+  if (!names.length) return;
+  names.forEach((n) => { orders[n] = true; });
+  saveOrders();
+  selected.clear();
+  renderConflicts();
+  alert(`🛒 ${names.length} carta(s) marcadas como pedidas.`);
 }
 
 let currentTab = "missing";
@@ -320,12 +381,13 @@ function renderDeckTab() {
   $("conflictList").classList.toggle("hidden", !missing);
   $("changesList").classList.toggle("hidden", missing);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === currentTab));
-  if (missing) renderConflicts(); else renderChanges();
+  if (missing) { renderConflicts(); } else { $("selectionBar").classList.add("hidden"); renderChanges(); }
 }
 
 function openDeck(deck) {
   currentDeck = deck;
   currentTab = "missing";
+  selected.clear();
   $("homeView").classList.add("hidden");
   $("priceView").classList.add("hidden");
   $("deckView").classList.remove("hidden");
@@ -540,6 +602,7 @@ async function init() {
         renderCollectionStatus();
         renderDecks($("deckSearch").value);
         if (currentDeck) renderDeckTab();
+        if (window.mtgSync) window.mtgSync.afterImport();
         alert(`✅ Colección importada: ${Object.keys(collection).length} cartas distintas.`);
       } catch (err) {
         alert("❌ " + err.message);
@@ -553,9 +616,12 @@ async function init() {
   $("deckSearch").oninput = (e) => renderDecks(e.target.value);
   $("cardSearch").oninput = () => renderDeckTab();
   $("basicsToggle").onchange = () => renderDeckTab();
+  $("hideOrdered").onchange = () => renderDeckTab();
+  $("copyCardmarket").onclick = copyToCardmarket;
+  $("markOrdered").onclick = markSelectedOrdered;
 
   document.querySelectorAll(".tab").forEach((t) => {
-    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; renderDeckTab(); };
+    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); renderDeckTab(); };
   });
 
   $("pricesNav").onclick = openPrices;

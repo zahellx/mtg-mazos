@@ -284,7 +284,7 @@ async function init() {
   $("csvInput").onchange = (e) => {
     const f = e.target.files[0]; if (!f) return;
     const rd = new FileReader();
-    rd.onload = () => { try { importCSV(rd.result); renderCollectionStatus(); alert(`✅ Colección importada: ${Object.keys(collection).length} cartas.`); } catch (err) { alert("❌ " + err.message); } };
+    rd.onload = () => { try { importCSV(rd.result); renderCollectionStatus(); if (window.mtgSync) window.mtgSync.afterImport(); alert(`✅ Colección importada: ${Object.keys(collection).length} cartas.`); } catch (err) { alert("❌ " + err.message); } };
     rd.readAsText(f); e.target.value = "";
   };
 
