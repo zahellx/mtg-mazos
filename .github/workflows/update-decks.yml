@@ -1,25 +1,27 @@
 name: Actualizar mazos y publicar
 
 on:
-  # Botón "Run workflow" (también desde la app de GitHub en el móvil)
   workflow_dispatch:
-  # Automático: cada día a las 06:00 UTC
   schedule:
     - cron: "0 6 * * *"
-  # Al hacer push a la app
   push:
     branches: [main]
 
 permissions:
-  contents: write   # para empujar la rama gh-pages
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: "deploy-gh-pages"
+  group: "pages"
   cancel-in-progress: false
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy3.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy1.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,17 +32,36 @@ jobs:
       - name: Descargar mazos de Archidekt
         run: node fetch-decks.js
 
-      - name: Publicar en la rama gh-pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tmp="$(mktemp -d)"
-          # Copia el sitio (incluye data/decks-data.json recién generado); excluye control de versiones y basura.
-          rsync -a --exclude='.git' --exclude='node_modules' ./ "$tmp/"
-          touch "$tmp/.nojekyll"   # servir los ficheros tal cual, sin procesar con Jekyll
-          cd "$tmp"
-          git init -q
-          git checkout -q -b gh-pages
-          git add -A
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "deploy $(date -u +%FT%TZ)"
-          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Subir artefacto
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+
+      # El despliegue de Pages falla de forma intermitente ("Deployment failed,
+      # try again later"). Reintentamos hasta 3 veces en la misma ejecución.
+      - name: Desplegar (intento 1)
+        id: deploy1
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Esperar antes de reintentar
+        if: steps.deploy1.outcome == 'failure'
+        run: sleep 20
+
+      - name: Desplegar (intento 2)
+        id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Esperar antes de reintentar
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        run: sleep 30
+
+      - name: Desplegar (intento 3)
+        id: deploy3
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        uses: actions/deploy-pages@v4
