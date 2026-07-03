@@ -634,6 +634,7 @@ async function init() {
     try {
       await takeSnapshot((done, total) => { btn.textContent = `Consultando precios… ${done}/${total}`; });
       renderPrices();
+      if (window.mtgSync) window.mtgSync.afterImport();
     } catch (err) {
       alert("❌ " + err.message);
     } finally {
