@@ -138,10 +138,12 @@
     document.body.appendChild(b);
   }
 
-  // Auto-pull al cargar: si en la nube hay algo más reciente que lo local, lo aplica.
+  // Comprueba la nube: si updatedAt es más reciente que lo descargado, baja y recarga.
+  let checking = false;
   async function autoPull() {
     const cfg = getCfg();
-    if (!cfg.token) return;
+    if (!cfg.token || checking) return;
+    checking = true;
     try {
       const remote = await getRemote(cfg);
       if (remote.exists && remote.bundle && (remote.bundle.updatedAt || 0) > localTs()) {
@@ -151,6 +153,15 @@
         setTimeout(() => location.reload(), 900);
       }
     } catch (_) { /* silencioso */ }
+    finally { checking = false; }
+  }
+
+  // Revisa periódicamente (cada 90 s), al volver a la pestaña y al recuperar foco.
+  function startAutoSync() {
+    autoPull();
+    setInterval(() => { if (!document.hidden) autoPull(); }, 90000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) autoPull(); });
+    window.addEventListener("focus", autoPull);
   }
 
   // API pública para que las apps empujen tras importar.
@@ -162,5 +173,5 @@
     },
   };
 
-  window.addEventListener("load", () => { addButton(); autoPull(); });
+  window.addEventListener("load", () => { addButton(); startAutoSync(); });
 })();
