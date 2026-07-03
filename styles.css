@@ -97,10 +97,13 @@ main { padding: 14px 16px 40px; max-width: 820px; margin: 0 auto; }
 /* Resumen de faltantes por ubicación */
 .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .summary .s-item {
-  flex: 1; min-width: 90px; text-align: center; font-size: 12px; color: var(--muted);
+  flex: 1 1 30%; min-width: 90px; text-align: center; font-size: 12px; color: var(--muted);
   background: var(--panel); border: 1px solid var(--border); border-radius: 11px; padding: 8px 6px;
+  cursor: pointer; font-family: inherit; transition: border-color .12s, background .12s;
 }
 .summary .s-item b { display: block; font-size: 18px; color: var(--text); margin-top: 2px; }
+.summary .s-item.active { border-color: var(--accent); background: #1b2340; color: var(--text); }
+.summary .s-item.active b { color: var(--accent); }
 
 /* Secciones de ubicación por carta */
 .loc-sec { margin-top: 6px; }

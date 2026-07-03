@@ -17,6 +17,7 @@ let orders = {};            // cardName -> true (marcada como pedida)
 let cardmarket = {};        // cardName -> qty (en la lista de compra de Cardmarket)
 let proxies = {};           // deckName -> { cardName: true } (proxy en ese mazo)
 let selected = new Set();   // selección actual en la vista "Faltan"
+let activeFilters = new Set(); // filtros de estado activos (botones-contador)
 let currentDeck = null;
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
@@ -264,22 +265,27 @@ function renderDecks(filter = "") {
 
 let lastMissingList = []; // faltantes visibles actuales (para Cardmarket / pedidas)
 
+// Predicado de cada filtro de estado para una carta del mazo actual.
+function matchFilter(key, c, dn) {
+  if (key === "deck") return c.category === "deck";
+  if (key === "binder") return c.category === "binder";
+  if (key === "buy") return c.category === "buy" && !isProxy(dn, c.name);
+  if (key === "proxy") return isProxy(dn, c.name);
+  if (key === "pedida") return orders[c.name] != null;
+  if (key === "cardmarket") return cardmarket[c.name] != null;
+  return true;
+}
+
 function renderConflicts() {
   const includeBasics = $("basicsToggle").checked;
   const filter = norm($("cardSearch").value);
-  const state = $("stateFilter").value;
-  let list = missingForDeck(currentDeck, includeBasics);
-  if (filter) list = list.filter((c) => norm(c.name).includes(filter));
-  if (state !== "all") {
-    const dn = currentDeck.name;
-    list = list.filter((c) => {
-      if (state === "proxy") return isProxy(dn, c.name);
-      if (state === "pedida") return orders[c.name] != null;
-      if (state === "cardmarket") return cardmarket[c.name] != null;
-      if (state === "buy") return c.category === "buy" && !isProxy(dn, c.name);
-      return c.category === state; // deck | binder
-    });
-  }
+  const dn = currentDeck.name;
+  let scoped = missingForDeck(currentDeck, includeBasics);
+  if (filter) scoped = scoped.filter((c) => norm(c.name).includes(filter));
+  // Filtros activos (unión): si hay alguno, muestra las que cumplan alguno.
+  let list = activeFilters.size
+    ? scoped.filter((c) => [...activeFilters].some((k) => matchFilter(k, c, dn)))
+    : scoped;
   lastMissingList = list;
 
   const wrap = $("conflictList");
@@ -296,26 +302,29 @@ function renderConflicts() {
       Crea esa carpeta en ManaBox con las cartas de este mazo para poder comparar.</div></div>`;
     return;
   }
-  if (!list.length) {
+  if (!scoped.length) {
     wrap.innerHTML = `<div class="empty"><div class="big">✅</div>
       <div>No le falta ninguna carta a este mazo: todo está en su carpeta física.</div></div>`;
     return;
   }
 
-  const dn = currentDeck.name;
-  const all = missingForDeck(currentDeck, includeBasics); // para contadores (sin filtro de estado)
-  const nDeck = all.filter((c) => c.category === "deck").length;
-  const nBinder = all.filter((c) => c.category === "binder").length;
-  const nBuy = all.filter((c) => c.category === "buy" && !isProxy(dn, c.name)).length;
-  const nProxy = all.filter((c) => isProxy(dn, c.name)).length;
-  const summary = `<div class="summary">
-    <span class="s-item">🗂️ En otros mazos <b>${nDeck}</b></span>
-    <span class="s-item">📦 En otra carpeta <b>${nBinder}</b></span>
-    <span class="s-item">🛒 Por comprar <b>${nBuy}</b></span>
-    <span class="s-item">🎭 Con proxy <b>${nProxy}</b></span>
-  </div>`;
+  // Contadores (sobre el conjunto buscado, antes de aplicar filtros de estado) = botones-filtro.
+  const FILTERS = [
+    { key: "deck", label: "🗂️ En otros mazos" },
+    { key: "binder", label: "📦 En otra carpeta" },
+    { key: "buy", label: "🛒 Por comprar" },
+    { key: "proxy", label: "🎭 Con proxy" },
+    { key: "pedida", label: "🛒 Pedidas" },
+    { key: "cardmarket", label: "📋 Cardmarket" },
+  ];
+  const summary = `<div class="summary">` + FILTERS.map((f) => {
+    const n = scoped.filter((c) => matchFilter(f.key, c, dn)).length;
+    const active = activeFilters.has(f.key) ? " active" : "";
+    return `<button type="button" class="s-item${active}" data-f="${f.key}">${f.label} <b>${n}</b></button>`;
+  }).join("") + `</div>`;
 
-  wrap.innerHTML = summary + list.map((c) => {
+  const rowsHtml = list.length
+    ? list.map((c) => {
     const proxy = isProxy(dn, c.name);
     const icon = c.category === "deck" ? "🗂️" : c.category === "binder" ? "📦" : "🛒";
     let locHtml = "";
@@ -337,8 +346,18 @@ function renderConflicts() {
         ${locHtml}
       </div>
     </div>`;
-  }).join("");
+      }).join("")
+    : `<div class="empty"><div class="muted">Sin cartas con los filtros activos.</div></div>`;
 
+  wrap.innerHTML = summary + rowsHtml;
+
+  wrap.querySelectorAll(".s-item").forEach((b) => {
+    b.onclick = () => {
+      const k = b.dataset.f;
+      activeFilters.has(k) ? activeFilters.delete(k) : activeFilters.add(k);
+      renderConflicts();
+    };
+  });
   wrap.querySelectorAll(".sel").forEach((cb) => {
     cb.onchange = () => { cb.checked ? selected.add(cb.dataset.name) : selected.delete(cb.dataset.name); updateSelectionBar(); };
   });
@@ -469,7 +488,6 @@ function renderDeckTab() {
   $("conflictList").classList.toggle("hidden", !missing);
   $("changesList").classList.toggle("hidden", missing);
   $("selectAllBtn").classList.toggle("hidden", !missing);
-  $("stateFilter").classList.toggle("hidden", !missing);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === currentTab));
   if (missing) { renderConflicts(); } else { $("selectionBar").classList.add("hidden"); renderChanges(); }
 }
@@ -484,7 +502,7 @@ function openDeck(deck) {
   $("backBtn").classList.remove("hidden");
   $("title").textContent = deck.name;
   $("cardSearch").value = "";
-  $("stateFilter").value = "all";
+  activeFilters.clear();
   window.scrollTo(0, 0);
   renderDeckTab();
 }
@@ -707,14 +725,13 @@ async function init() {
   $("deckSearch").oninput = (e) => renderDecks(e.target.value);
   $("cardSearch").oninput = () => renderDeckTab();
   $("basicsToggle").onchange = () => renderDeckTab();
-  $("stateFilter").onchange = () => renderConflicts();
   $("selectAllBtn").onclick = toggleSelectAll;
   $("addCardmarket").onclick = addSelectedToCardmarket;
   $("markOrdered").onclick = markSelectedOrdered;
   $("markProxy").onclick = markSelectedProxy;
 
   document.querySelectorAll(".tab").forEach((t) => {
-    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); renderDeckTab(); };
+    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); activeFilters.clear(); renderDeckTab(); };
   });
 
   $("pricesNav").onclick = openPrices;
