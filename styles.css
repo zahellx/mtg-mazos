@@ -182,6 +182,9 @@ a { color: var(--accent); }
 .conflict.ordered { opacity: .5; }
 .ord-badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--warn); background: #3a2a14; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
 .cm-badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent); background: #1b2340; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+.prx-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #d8b4fe; background: #2a1f3d; border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+.conflict.proxied { border-left: 3px solid #9b6cff; }
+.selection-bar .prx { background: #9b6cff; color: #150a25; }
 .cm-row { display: flex; align-items: center; gap: 11px; padding: 10px 11px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; }
 .cm-row img { width: 40px; height: 56px; border-radius: 5px; object-fit: cover; background: var(--panel-2); flex-shrink: 0; }
 .cm-row .cm-name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }

@@ -51,15 +51,24 @@
         <button type="button" class="btn secondary" id="selectAllBtn" style="width:auto; white-space:nowrap;">☑︎ Todo</button>
       </div>
       <div class="filters">
+        <select id="stateFilter" style="flex:1; background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:9px 12px; font-size:14px;">
+          <option value="all">Todas</option>
+          <option value="deck">🗂️ En otros mazos</option>
+          <option value="binder">📦 En otra carpeta</option>
+          <option value="buy">🛒 Por comprar</option>
+          <option value="proxy">🎭 Con proxy</option>
+          <option value="pedida">🛒 Pedidas</option>
+          <option value="cardmarket">📋 En Cardmarket</option>
+        </select>
         <label class="toggle"><input type="checkbox" id="basicsToggle" /> Básicas</label>
-        <label class="toggle"><input type="checkbox" id="hideOrdered" /> Ocultar pedidas</label>
       </div>
       <div id="conflictList"></div>
       <div id="changesList" class="hidden"></div>
       <div id="selectionBar" class="selection-bar hidden">
         <span class="selc"><span id="selCount">0</span> sel.</span>
-        <button type="button" class="cm" id="addCardmarket">📋 A Cardmarket</button>
+        <button type="button" class="cm" id="addCardmarket">📋 Cardmarket</button>
         <button type="button" class="ord" id="markOrdered">🛒 Pedidas</button>
+        <button type="button" class="prx" id="markProxy">🎭 Proxy</button>
       </div>
     </section>
 

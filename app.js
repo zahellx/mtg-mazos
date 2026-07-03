@@ -5,6 +5,7 @@ const COLLECTION_KEY = "mtg-collection-v1";   // {name: totalQty} (compat)
 const COLLECTION_DATA_KEY = "mtg-collection-data-v1"; // {byName, deckFolders, pool, printings}
 const ORDERS_KEY = "mtg-orders-v1";           // {cardName: true} cartas pedidas
 const CARDMARKET_KEY = "mtg-cardmarket-v1";   // {cardName: qty} lista para comprar en Cardmarket
+const PROXIES_KEY = "mtg-proxies-v1";         // {deckName: {cardName: true}} proxies por mazo
 
 let decksData = null;       // { generatedAt, decks: [{name, manaboxFolder, commander, cards:[{name, quantity, type}]}] }
 let collection = {};        // cardName -> copias poseídas (total, todos los binders no-list)
@@ -14,6 +15,7 @@ let pool = {};              // cardName -> qty en binders NO-deck (agregado; der
 let printings = [];         // [{scryfallId, name, foil, qty, setCode, collectorNumber, purchasePrice}]
 let orders = {};            // cardName -> true (marcada como pedida)
 let cardmarket = {};        // cardName -> qty (en la lista de compra de Cardmarket)
+let proxies = {};           // deckName -> { cardName: true } (proxy en ese mazo)
 let selected = new Set();   // selección actual en la vista "Faltan"
 let currentDeck = null;
 
@@ -34,6 +36,7 @@ function loadCollection() {
   } catch { deckFolders = {}; binders = {}; pool = {}; printings = []; }
   try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
   try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
+  try { proxies = JSON.parse(localStorage.getItem(PROXIES_KEY)) || {}; } catch { proxies = {}; }
 }
 function saveOrders() {
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
@@ -43,6 +46,11 @@ function saveCardmarket() {
   localStorage.setItem(CARDMARKET_KEY, JSON.stringify(cardmarket));
   if (window.mtgSync) window.mtgSync.afterImport();
 }
+function saveProxies() {
+  localStorage.setItem(PROXIES_KEY, JSON.stringify(proxies));
+  if (window.mtgSync) window.mtgSync.afterImport();
+}
+const isProxy = (deckName, card) => !!(proxies[deckName] && proxies[deckName][card]);
 function ownedOf(name) {
   // ManaBox a veces guarda caras dobles como "A // B"; probamos el nombre completo y la cara frontal.
   return collection[name] ?? collection[name.split(" // ")[0]] ?? 0;
@@ -259,9 +267,19 @@ let lastMissingList = []; // faltantes visibles actuales (para Cardmarket / pedi
 function renderConflicts() {
   const includeBasics = $("basicsToggle").checked;
   const filter = norm($("cardSearch").value);
+  const state = $("stateFilter").value;
   let list = missingForDeck(currentDeck, includeBasics);
   if (filter) list = list.filter((c) => norm(c.name).includes(filter));
-  if ($("hideOrdered").checked) list = list.filter((c) => !orders[c.name]);
+  if (state !== "all") {
+    const dn = currentDeck.name;
+    list = list.filter((c) => {
+      if (state === "proxy") return isProxy(dn, c.name);
+      if (state === "pedida") return orders[c.name] != null;
+      if (state === "cardmarket") return cardmarket[c.name] != null;
+      if (state === "buy") return c.category === "buy" && !isProxy(dn, c.name);
+      return c.category === state; // deck | binder
+    });
+  }
   lastMissingList = list;
 
   const wrap = $("conflictList");
@@ -284,32 +302,38 @@ function renderConflicts() {
     return;
   }
 
-  const nDeck = list.filter((c) => c.category === "deck").length;
-  const nBinder = list.filter((c) => c.category === "binder").length;
-  const nBuy = list.filter((c) => c.category === "buy").length;
+  const dn = currentDeck.name;
+  const all = missingForDeck(currentDeck, includeBasics); // para contadores (sin filtro de estado)
+  const nDeck = all.filter((c) => c.category === "deck").length;
+  const nBinder = all.filter((c) => c.category === "binder").length;
+  const nBuy = all.filter((c) => c.category === "buy" && !isProxy(dn, c.name)).length;
+  const nProxy = all.filter((c) => isProxy(dn, c.name)).length;
   const summary = `<div class="summary">
     <span class="s-item">🗂️ En otros mazos <b>${nDeck}</b></span>
     <span class="s-item">📦 En otra carpeta <b>${nBinder}</b></span>
     <span class="s-item">🛒 Por comprar <b>${nBuy}</b></span>
+    <span class="s-item">🎭 Con proxy <b>${nProxy}</b></span>
   </div>`;
 
   wrap.innerHTML = summary + list.map((c) => {
+    const proxy = isProxy(dn, c.name);
     const icon = c.category === "deck" ? "🗂️" : c.category === "binder" ? "📦" : "🛒";
     let locHtml = "";
     if (c.deckLocs.length) locHtml += `<div class="loc-sec"><span class="loc-h">🗂️ mazo:</span>${chipsHtml(c.deckLocs)}</div>`;
     if (c.binderLocs.length) locHtml += `<div class="loc-sec"><span class="loc-h">📦 carpetas:</span>${chipsHtml(c.binderLocs)}</div>`;
-    if (c.category === "buy") locHtml = `<div class="c-counts"><span class="loc bad">🛒 No la tienes — por comprar</span></div>`;
+    if (c.category === "buy" && !c.deckLocs.length && !c.binderLocs.length) locHtml = `<div class="c-counts"><span class="loc bad">🛒 No la tienes — por comprar</span></div>`;
 
-    const isOrdered = !!orders[c.name];
+    const isOrdered = orders[c.name] != null;
     const inCM = cardmarket[c.name] != null;
-    const badges = (isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : "") +
+    const badges = (proxy ? ' <span class="prx-badge">🎭 proxy</span>' : "") +
+      (isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : "") +
       (inCM ? ' <span class="cm-badge">📋 Cardmarket</span>' : "");
     return `
-    <div class="conflict${isOrdered ? " ordered" : ""}">
+    <div class="conflict${isOrdered ? " ordered" : ""}${proxy ? " proxied" : ""}">
       <input type="checkbox" class="sel" data-name="${escapeHtml(c.name)}" ${selected.has(c.name) ? "checked" : ""} />
       <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
       <div class="c-info">
-        <div class="c-name">${icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name">${proxy ? "🎭" : icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
@@ -376,6 +400,21 @@ function markSelectedOrdered() {
   alert(`🛒 ${names.length} carta(s) marcadas como pedidas.`);
 }
 
+// Marca/desmarca proxy en el mazo actual las seleccionadas (toggle según estén todas o no).
+function markSelectedProxy() {
+  const names = [...selected];
+  if (!names.length) return;
+  const dn = currentDeck.name;
+  proxies[dn] = proxies[dn] || {};
+  const allProxy = names.every((n) => proxies[dn][n]);
+  names.forEach((n) => { if (allProxy) delete proxies[dn][n]; else proxies[dn][n] = true; });
+  if (!Object.keys(proxies[dn]).length) delete proxies[dn];
+  saveProxies();
+  selected.clear();
+  renderConflicts();
+  alert(allProxy ? `🎭 Quitado el proxy de ${names.length} carta(s).` : `🎭 ${names.length} carta(s) marcadas como proxy en “${dn}”.`);
+}
+
 function toggleSelectAll() {
   const visible = lastMissingList.map((c) => c.name);
   const allSel = visible.length && visible.every((n) => selected.has(n));
@@ -430,7 +469,7 @@ function renderDeckTab() {
   $("conflictList").classList.toggle("hidden", !missing);
   $("changesList").classList.toggle("hidden", missing);
   $("selectAllBtn").classList.toggle("hidden", !missing);
-  $("hideOrdered").closest(".toggle").classList.toggle("hidden", !missing);
+  $("stateFilter").classList.toggle("hidden", !missing);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === currentTab));
   if (missing) { renderConflicts(); } else { $("selectionBar").classList.add("hidden"); renderChanges(); }
 }
@@ -445,6 +484,7 @@ function openDeck(deck) {
   $("backBtn").classList.remove("hidden");
   $("title").textContent = deck.name;
   $("cardSearch").value = "";
+  $("stateFilter").value = "all";
   window.scrollTo(0, 0);
   renderDeckTab();
 }
@@ -667,10 +707,11 @@ async function init() {
   $("deckSearch").oninput = (e) => renderDecks(e.target.value);
   $("cardSearch").oninput = () => renderDeckTab();
   $("basicsToggle").onchange = () => renderDeckTab();
-  $("hideOrdered").onchange = () => renderDeckTab();
+  $("stateFilter").onchange = () => renderConflicts();
   $("selectAllBtn").onclick = toggleSelectAll;
   $("addCardmarket").onclick = addSelectedToCardmarket;
   $("markOrdered").onclick = markSelectedOrdered;
+  $("markProxy").onclick = markSelectedProxy;
 
   document.querySelectorAll(".tab").forEach((t) => {
     t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); renderDeckTab(); };
