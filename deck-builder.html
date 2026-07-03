@@ -69,8 +69,14 @@
     <section id="pedidasView" class="hidden">
       <div class="collection-bar"><div id="pedStatus" class="meta"></div></div>
       <div class="cm-actions">
-        <button class="btn" id="pedCopy">📋 Copiar lista entera</button>
+        <button class="btn secondary" id="pedImport" style="width:auto; white-space:nowrap;">📥 Pegar pedido</button>
+        <button class="btn" id="pedCopy">📋 Copiar</button>
         <button class="btn secondary" id="pedClear" style="width:auto; white-space:nowrap;">🗑️ Limpiar</button>
+      </div>
+      <div id="pedImportBox" class="collection-bar hidden">
+        <div class="title">Pega aquí el pedido de Cardmarket (tal cual, con nombres en inglés)</div>
+        <textarea id="pedImportText" rows="6" placeholder="1x  Contrahechizo&#10;Counterspell&#10;#50&#10;NM&#10;1,49 €&#10;..." style="width:100%; background:#0f1115; border:1px solid #2a2f3a; color:#e8eaed; border-radius:9px; padding:10px; font-size:13px; margin:8px 0;"></textarea>
+        <button class="btn" id="pedImportGo">Marcar como pedidas</button>
       </div>
       <div id="pedidasList"></div>
     </section>

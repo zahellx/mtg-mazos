@@ -311,6 +311,58 @@ function clearPedidas() {
   renderPedidasList();
 }
 
+// Índice de nombres conocidos (inglés) -> nombre exacto, para normalizar lo pegado.
+let nameIndexCache = null;
+function nameIndex() {
+  if (nameIndexCache) return nameIndexCache;
+  const idx = {};
+  decksData.decks.forEach((dk) => dk.cards.forEach((c) => { idx[c.name.toLowerCase()] = c.name; }));
+  Object.keys(collection).forEach((n) => { if (!idx[n.toLowerCase()]) idx[n.toLowerCase()] = n; });
+  nameIndexCache = idx;
+  return idx;
+}
+
+// Parsea un pedido pegado de Cardmarket. Usa la 2ª línea de cada bloque (nombre en inglés).
+function parseCardmarketOrder(text) {
+  const lines = text.split(/\r?\n/).map((s) => s.trim());
+  const res = {}; let qty = null, expect = false;
+  for (const line of lines) {
+    if (!line) continue;
+    if (/nombre.*precio/i.test(line)) continue; // cabecera
+    const m = line.match(/^(\d+)\s*x\b\s*(.*)$/i);
+    if (m) { qty = parseInt(m[1], 10) || 1; expect = true; continue; }
+    if (expect) {
+      const name = line.replace(/\s*\(V\.?\s*\d+\)\s*$/i, "").trim(); // quita "(V.2)" etc.
+      if (name) res[name] = (res[name] || 0) + qty;
+      expect = false;
+    }
+  }
+  return res;
+}
+
+function importOrdersFromText() {
+  const text = $("pedImportText").value;
+  const parsed = parseCardmarketOrder(text);
+  const names = Object.keys(parsed);
+  if (!names.length) { alert("No he encontrado cartas en el texto. Pega el pedido tal cual (con los nombres en inglés)."); return; }
+  const idx = nameIndex();
+  const unknown = [];
+  names.forEach((n) => {
+    const exact = idx[n.toLowerCase()] || n;
+    orders[exact] = parsed[n];
+    if (cardmarket[exact] != null) delete cardmarket[exact]; // ya pedida -> fuera de "por comprar"
+    if (!idx[n.toLowerCase()]) unknown.push(n);
+  });
+  saveOrders();
+  saveCardmarket();
+  $("pedImportText").value = "";
+  $("pedImportBox").classList.add("hidden");
+  renderPedidasList();
+  let msg = `🛒 ${names.length} carta(s) marcadas como pedidas.`;
+  if (unknown.length) msg += `\n\n⚠️ Estas no están en tus mazos ni colección (las marco igual, revisa el nombre):\n- ${unknown.join("\n- ")}`;
+  alert(msg);
+}
+
 // ── Navegación ──────────────────────────────────────────────────────────────
 const REPORTS = [
   { id: "cardmarket", icon: "📋", name: "Lista Cardmarket", desc: "Cartas marcadas para comprar, con copias" },
@@ -391,6 +443,8 @@ async function init() {
   $("cmClear").onclick = clearCardmarket;
   $("pedCopy").onclick = copyPedidasAll;
   $("pedClear").onclick = clearPedidas;
+  $("pedImport").onclick = () => $("pedImportBox").classList.toggle("hidden");
+  $("pedImportGo").onclick = importOrdersFromText;
   $("conflictosSearch").oninput = renderConflictos;
   $("conflictosBasics").onchange = renderConflictos;
   $("infoDeckSelect").onchange = renderInfo;
