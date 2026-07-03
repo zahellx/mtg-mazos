@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1115" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>Mis Mazos MTG</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="h-row">
+      <button id="backBtn" class="back-btn hidden">‹ Mazos</button>
+      <h1 id="title">Mis Mazos MTG</h1>
+    </div>
+    <div class="meta" id="syncMeta"></div>
+  </header>
+
+  <main>
+    <!-- Vista de inicio -->
+    <section id="homeView">
+      <div class="collection-bar">
+        <div class="title">📦 Mi colección (ManaBox)</div>
+        <div id="collectionStatus" class="meta" style="margin-bottom:10px;">Sin colección importada todavía.</div>
+        <button class="btn" id="importBtn">Importar colección (CSV de ManaBox)</button>
+        <input type="file" id="csvInput" accept=".csv,text/csv" class="hidden" />
+        <p class="note">En ManaBox: <b>Ajustes → Exportar colección → CSV</b>, compártelo a este móvil y elígelo aquí. Se guarda solo en este dispositivo.</p>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-bottom:16px;">
+        <button class="btn secondary" id="pricesNav">📈 Precios</button>
+        <a class="btn secondary" href="deck-builder.html" style="text-decoration:none;">🛠️ Deck Builder</a>
+      </div>
+
+      <div class="filters">
+        <input type="search" id="deckSearch" placeholder="Buscar mazo..." />
+      </div>
+      <div class="deck-grid" id="deckGrid"></div>
+    </section>
+
+    <!-- Vista de detalle de mazo -->
+    <section id="deckView" class="hidden">
+      <div class="tabs">
+        <button class="tab active" data-tab="missing">Faltan</button>
+        <button class="tab" data-tab="changes">Cambios vs Archidekt</button>
+      </div>
+      <div class="filters">
+        <input type="search" id="cardSearch" placeholder="Buscar carta..." />
+        <button type="button" class="btn secondary" id="selectAllBtn" style="width:auto; white-space:nowrap;">☑︎ Todo</button>
+      </div>
+      <div class="filters">
+        <label class="toggle"><input type="checkbox" id="basicsToggle" /> Básicas</label>
+        <label class="toggle"><input type="checkbox" id="hideOrdered" /> Ocultar pedidas</label>
+      </div>
+      <div id="conflictList"></div>
+      <div id="changesList" class="hidden"></div>
+      <div id="selectionBar" class="selection-bar hidden">
+        <span class="selc"><span id="selCount">0</span> sel.</span>
+        <button type="button" class="cm" id="addCardmarket">📋 A Cardmarket</button>
+        <button type="button" class="ord" id="markOrdered">🛒 Pedidas</button>
+      </div>
+    </section>
+
+    <!-- Vista de movimientos de precio -->
+    <section id="priceView" class="hidden">
+      <div class="collection-bar">
+        <div class="title">📈 Movimientos de precio (Scryfall, EUR)</div>
+        <div id="priceStatus" class="meta" style="margin-bottom:10px;"></div>
+        <button class="btn" id="snapshotBtn">Actualizar precios ahora</button>
+        <p class="note">Guarda una “foto” de precios de tu colección. El histórico se construye desde hoy: necesitas al menos 2 fotos en días distintos para ver subidas/bajadas.</p>
+      </div>
+      <div class="filters">
+        <input type="search" id="priceSearch" placeholder="Buscar carta..." />
+        <label class="toggle"><input type="checkbox" id="downToggle" /> Bajadas</label>
+      </div>
+      <div id="priceList"></div>
+    </section>
+  </main>
+
+  <script src="sync.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

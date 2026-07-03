@@ -1,0 +1,9 @@
+{
+  "name": "mtg-mazos",
+  "version": "1.0.0",
+  "description": "PWA para ver, por mazo, qué cartas faltan porque están en otro mazo (colección MTG compartida).",
+  "scripts": {
+    "fetch": "node fetch-decks.js"
+  },
+  "license": "MIT"
+}
