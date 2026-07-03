@@ -4,10 +4,13 @@ const BASICS = new Set(["Plains", "Island", "Swamp", "Mountain", "Forest", "Wast
 const COLLECTION_KEY = "mtg-collection-v1";
 const COLLECTION_DATA_KEY = "mtg-collection-data-v1";
 
+const CARDMARKET_KEY = "mtg-cardmarket-v1";
+
 let decksData = null;
 let collection = {};      // {name: totalQty}
 let deckFolders = {};     // {folder: {name: qty}}
 let pool = {};            // {name: qty} en binders no-deck
+let cardmarket = {};      // {name: qty} lista de compra
 let priceByName = {};     // cache de precios EUR por nombre (para vendibles)
 
 const $ = (id) => document.getElementById(id);
@@ -20,6 +23,11 @@ function loadCollection() {
   try { collection = JSON.parse(localStorage.getItem(COLLECTION_KEY)) || {}; } catch { collection = {}; }
   try { const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {}; deckFolders = d.deckFolders || {}; pool = d.pool || {}; }
   catch { deckFolders = {}; pool = {}; }
+  try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
+}
+function saveCardmarket() {
+  localStorage.setItem(CARDMARKET_KEY, JSON.stringify(cardmarket));
+  if (window.mtgSync) window.mtgSync.afterImport();
 }
 const ownedOf = (name) => collection[name] ?? collection[name.split(" // ")[0]] ?? 0;
 
@@ -223,13 +231,50 @@ async function renderInfo() {
     }).join("");
 }
 
+// ── Lista Cardmarket ───────────────────────────────────────────────────────────
+function cardmarketText() {
+  return Object.entries(cardmarket).sort((a, b) => a[0].localeCompare(b[0])).map(([name, qty]) => `${qty} ${name}`).join("\n");
+}
+function renderCardmarketList() {
+  const entries = Object.entries(cardmarket).sort((a, b) => a[0].localeCompare(b[0]));
+  const totalCopies = entries.reduce((s, [, q]) => s + q, 0);
+  $("cmStatus").innerHTML = `${entries.length} cartas · ${totalCopies} copias en total`;
+  const wrap = $("cardmarketList");
+  if (!entries.length) {
+    wrap.innerHTML = `<div class="empty"><div class="big">📋</div><div>Lista vacía. En “Mis Mazos” → pestaña Faltan, selecciona cartas y pulsa “📋 A Cardmarket”.</div></div>`;
+    return;
+  }
+  wrap.innerHTML = entries.map(([name, qty]) => `
+    <div class="cm-row">
+      <img loading="lazy" src="${imgUrl(name)}" alt="${escapeHtml(name)}" onerror="this.style.visibility='hidden'" />
+      <div class="cm-name">${escapeHtml(name)}</div>
+      <div class="cm-qty">×${qty}</div>
+      <button class="cm-x" data-name="${escapeHtml(name)}" title="Quitar">×</button>
+    </div>`).join("");
+  wrap.querySelectorAll(".cm-x").forEach((b) => { b.onclick = () => { delete cardmarket[b.dataset.name]; saveCardmarket(); renderCardmarketList(); }; });
+}
+async function copyCardmarketAll() {
+  const text = cardmarketText();
+  if (!text) { alert("La lista está vacía."); return; }
+  try { await navigator.clipboard.writeText(text); alert("📋 Lista copiada. Pégala en Cardmarket → Want List → “Añadir varios artículos”."); }
+  catch { prompt("Copia esta lista para Cardmarket:", text); }
+}
+function clearCardmarket() {
+  if (!Object.keys(cardmarket).length) return;
+  if (!confirm("¿Vaciar toda la lista de Cardmarket?")) return;
+  cardmarket = {};
+  saveCardmarket();
+  renderCardmarketList();
+}
+
 // ── Navegación ──────────────────────────────────────────────────────────────
 const REPORTS = [
+  { id: "cardmarket", icon: "📋", name: "Lista Cardmarket", desc: "Cartas marcadas para comprar, con copias" },
   { id: "vendibles", icon: "💰", name: "Cartas vendibles", desc: "Copias que te sobran (no las usa ningún mazo)" },
   { id: "conflictos", icon: "⚠️", name: "Conflictos de copias", desc: "Cartas que piden varios mazos y no te llegan" },
   { id: "info", icon: "📄", name: "Info / oracle de mazo", desc: "Cada mazo carta a carta, con reglas" },
 ];
-const VIEWS = { home: "dbHome", vendibles: "vendiblesView", conflictos: "conflictosView", info: "infoView" };
+const VIEWS = { home: "dbHome", cardmarket: "cardmarketView", vendibles: "vendiblesView", conflictos: "conflictosView", info: "infoView" };
 
 function showView(v) {
   Object.values(VIEWS).forEach((id) => $(id).classList.add("hidden"));
@@ -242,6 +287,7 @@ function openReport(id) {
   const r = REPORTS.find((x) => x.id === id);
   $("title").textContent = r ? `${r.icon} ${r.name}` : "Deck Builder";
   showView(id);
+  if (id === "cardmarket") renderCardmarketList();
   if (id === "vendibles") renderVendibles();
   if (id === "conflictos") renderConflictos();
   if (id === "info") renderInfo();
@@ -295,6 +341,8 @@ async function init() {
     try { const names = sellableCards().map((c) => c.name); btn.textContent = "Consultando…"; await fetchPricesFor(names); renderVendibles(); }
     finally { btn.disabled = false; btn.textContent = lbl; }
   };
+  $("cmCopy").onclick = copyCardmarketAll;
+  $("cmClear").onclick = clearCardmarket;
   $("conflictosSearch").oninput = renderConflictos;
   $("conflictosBasics").onchange = renderConflictos;
   $("infoDeckSelect").onchange = renderInfo;

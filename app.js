@@ -4,6 +4,7 @@ const BASICS = new Set(["Plains", "Island", "Swamp", "Mountain", "Forest", "Wast
 const COLLECTION_KEY = "mtg-collection-v1";   // {name: totalQty} (compat)
 const COLLECTION_DATA_KEY = "mtg-collection-data-v1"; // {byName, deckFolders, pool, printings}
 const ORDERS_KEY = "mtg-orders-v1";           // {cardName: true} cartas pedidas
+const CARDMARKET_KEY = "mtg-cardmarket-v1";   // {cardName: qty} lista para comprar en Cardmarket
 
 let decksData = null;       // { generatedAt, decks: [{name, manaboxFolder, commander, cards:[{name, quantity, type}]}] }
 let collection = {};        // cardName -> copias poseídas (total, todos los binders no-list)
@@ -11,6 +12,7 @@ let deckFolders = {};       // folderName -> { cardName: qty }  (Binder Type = d
 let pool = {};              // cardName -> qty en binders NO-deck (archivador, bundles...)
 let printings = [];         // [{scryfallId, name, foil, qty, setCode, collectorNumber, purchasePrice}]
 let orders = {};            // cardName -> true (marcada como pedida)
+let cardmarket = {};        // cardName -> qty (en la lista de compra de Cardmarket)
 let selected = new Set();   // selección actual en la vista "Faltan"
 let currentDeck = null;
 
@@ -29,9 +31,14 @@ function loadCollection() {
     printings = d.printings || [];
   } catch { deckFolders = {}; pool = {}; printings = []; }
   try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
+  try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
 }
 function saveOrders() {
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+  if (window.mtgSync) window.mtgSync.afterImport();
+}
+function saveCardmarket() {
+  localStorage.setItem(CARDMARKET_KEY, JSON.stringify(cardmarket));
   if (window.mtgSync) window.mtgSync.afterImport();
 }
 function ownedOf(name) {
@@ -277,12 +284,15 @@ function renderConflicts() {
       locHtml = `<div class="c-counts"><span class="loc bad">🛒 No la tienes — no está en ningún mazo</span></div>`;
     }
     const isOrdered = !!orders[c.name];
+    const inCM = cardmarket[c.name] != null;
+    const badges = (isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : "") +
+      (inCM ? ' <span class="cm-badge">📋 Cardmarket</span>' : "");
     return `
     <div class="conflict${isOrdered ? " ordered" : ""}">
       <input type="checkbox" class="sel" data-name="${escapeHtml(c.name)}" ${selected.has(c.name) ? "checked" : ""} />
       <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
       <div class="c-info">
-        <div class="c-name">${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : ""}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name">${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
@@ -311,28 +321,36 @@ function selectedNeeded() {
   return byName;
 }
 
-async function copyToCardmarket() {
+// Añade las seleccionadas a la lista de Cardmarket (qty = lo que más pide un mazo).
+function addSelectedToCardmarket() {
   const need = selectedNeeded();
-  const lines = Object.entries(need).map(([name, qty]) => `${qty} ${name}`);
-  if (!lines.length) return;
-  const text = lines.join("\n");
-  try {
-    await navigator.clipboard.writeText(text);
-    alert(`📋 Copiado (${lines.length} cartas). Pégalo en Cardmarket → Want List → “Añadir varios artículos”.`);
-  } catch {
-    // Fallback si clipboard falla (contexto no seguro): mostrar para copiar a mano.
-    prompt("Copia esta lista para Cardmarket:", text);
-  }
+  const names = Object.keys(need);
+  if (!names.length) return;
+  names.forEach((n) => { cardmarket[n] = Math.max(cardmarket[n] || 0, need[n] || 1); });
+  saveCardmarket();
+  selected.clear();
+  renderConflicts();
+  alert(`📋 ${names.length} carta(s) añadidas a la lista de Cardmarket.\nVe a Deck Builder → “Lista Cardmarket” para copiarla entera.`);
 }
 
 function markSelectedOrdered() {
   const names = [...selected];
   if (!names.length) return;
-  names.forEach((n) => { orders[n] = true; });
+  let removedFromCM = false;
+  names.forEach((n) => { orders[n] = true; if (cardmarket[n] != null) { delete cardmarket[n]; removedFromCM = true; } });
   saveOrders();
+  if (removedFromCM) saveCardmarket(); // al pedirla, sale de la lista de "por comprar"
   selected.clear();
   renderConflicts();
   alert(`🛒 ${names.length} carta(s) marcadas como pedidas.`);
+}
+
+function toggleSelectAll() {
+  const visible = lastMissingList.map((c) => c.name);
+  const allSel = visible.length && visible.every((n) => selected.has(n));
+  if (allSel) selected.clear();
+  else visible.forEach((n) => selected.add(n));
+  renderConflicts();
 }
 
 let currentTab = "missing";
@@ -380,6 +398,8 @@ function renderDeckTab() {
   const missing = currentTab === "missing";
   $("conflictList").classList.toggle("hidden", !missing);
   $("changesList").classList.toggle("hidden", missing);
+  $("selectAllBtn").classList.toggle("hidden", !missing);
+  $("hideOrdered").closest(".toggle").classList.toggle("hidden", !missing);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === currentTab));
   if (missing) { renderConflicts(); } else { $("selectionBar").classList.add("hidden"); renderChanges(); }
 }
@@ -617,7 +637,8 @@ async function init() {
   $("cardSearch").oninput = () => renderDeckTab();
   $("basicsToggle").onchange = () => renderDeckTab();
   $("hideOrdered").onchange = () => renderDeckTab();
-  $("copyCardmarket").onclick = copyToCardmarket;
+  $("selectAllBtn").onclick = toggleSelectAll;
+  $("addCardmarket").onclick = addSelectedToCardmarket;
   $("markOrdered").onclick = markSelectedOrdered;
 
   document.querySelectorAll(".tab").forEach((t) => {

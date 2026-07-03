@@ -11,6 +11,7 @@
     "mtg-collection-data-v1",
     "mtg-price-snapshots-v1",
     "mtg-orders-v1",
+    "mtg-cardmarket-v1",
   ];
 
   const getCfg = () => { try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch { return {}; } };
