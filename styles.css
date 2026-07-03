@@ -205,3 +205,16 @@ a { color: var(--accent); }
 .section-h { font-size: 13px; color: var(--muted); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
 .total-line { font-size: 13px; color: var(--muted); margin: 4px 0 14px; }
 .total-line b { color: var(--ok); }
+
+/* Configuración de mazos */
+.cfg-head { display: grid; grid-template-columns: 1fr 100px 1fr 34px; gap: 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; padding: 0 2px; }
+.cfg-row { display: grid; grid-template-columns: 1fr 100px 1fr 34px; gap: 6px; margin-bottom: 6px; }
+.cfg-row input { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px; font-size: 13px; min-width: 0; }
+.cfg-del { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--bad); cursor: pointer; font-size: 15px; }
+.chip.free-folder { cursor: pointer; color: var(--ok); border-color: #1f4d3a; }
+@media (max-width: 520px) {
+  .cfg-head { display: none; }
+  .cfg-row { grid-template-columns: 1fr 1fr; grid-auto-rows: auto; }
+  .cfg-row .cfg-name { grid-column: 1 / 3; }
+  .cfg-row .cfg-del { grid-column: 2; justify-self: end; width: 40px; }
+}

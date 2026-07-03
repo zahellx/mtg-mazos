@@ -363,15 +363,143 @@ function importOrdersFromText() {
   alert(msg);
 }
 
+// ── Configuración de mazos (fichero en el repo privado) ─────────────────────────
+const SYNC_CFG_KEY = "mtg-sync-config";
+let deckCfg = null, deckCfgSha = null;
+const syncCfg = () => { try { return JSON.parse(localStorage.getItem(SYNC_CFG_KEY)) || {}; } catch { return {}; } };
+const gh = (token) => ({ Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" });
+const b64e = (s) => btoa(unescape(encodeURIComponent(s)));
+const b64d = (s) => decodeURIComponent(escape(atob(s.replace(/\n/g, ""))));
+function publicRepoInfo() {
+  const owner = location.hostname.split(".")[0] || syncCfg().owner || "zahellx";
+  const repo = location.pathname.split("/").filter(Boolean)[0] || "mtg-mazos";
+  return { owner, repo };
+}
+
+async function loadDeckCfg() {
+  const c = syncCfg();
+  const api = `https://api.github.com/repos/${c.owner}/${c.repo}/contents/decks-config.json?ref=${c.branch || "main"}`;
+  const res = await fetch(api, { headers: gh(c.token), cache: "no-store" });
+  if (res.status === 404) {
+    deckCfg = { decks: decksData.decks.map((d) => ({ name: d.name, archideck_id: d.archideckId, manaboxFolder: d.manaboxFolder || "" })) };
+    deckCfgSha = null;
+    return "seed";
+  }
+  if (!res.ok) throw new Error(`GET ${res.status}`);
+  const j = await res.json();
+  deckCfgSha = j.sha;
+  deckCfg = JSON.parse(b64d(j.content));
+  if (!Array.isArray(deckCfg.decks)) deckCfg.decks = [];
+  deckCfg.decks.sort((a, b) => (a.manaboxFolder || "~").localeCompare(b.manaboxFolder || "~") || (a.name || "").localeCompare(b.name || ""));
+  return "loaded";
+}
+
+async function renderConfig() {
+  const c = syncCfg();
+  if (!c.token) {
+    $("cfgStatus").textContent = "Configura primero el sync (botón ☁️) con tu token; la config se guarda en tu repo privado.";
+    $("configBody").innerHTML = "";
+    return;
+  }
+  $("cfgStatus").textContent = "Cargando configuración…";
+  $("configBody").innerHTML = "";
+  try {
+    const how = await loadDeckCfg();
+    drawConfig(how === "seed");
+  } catch (e) {
+    $("cfgStatus").textContent = "❌ " + e.message;
+  }
+}
+
+function drawConfig(isSeed) {
+  const usedFolders = new Set(deckCfg.decks.map((d) => (d.manaboxFolder || "").trim()).filter(Boolean));
+  const allFolders = Object.keys(deckFolders).sort();
+  const freeFolders = allFolders.filter((f) => !usedFolders.has(f));
+
+  $("cfgStatus").innerHTML = `${deckCfg.decks.length} mazos configurados` +
+    (isSeed ? " · <b>sin guardar</b> (creados desde la config actual; pulsa Guardar)" : "");
+
+  const opts = `<datalist id="folderOptions">${allFolders.map((f) => `<option value="${escapeHtml(f)}">`).join("")}</datalist>`;
+  const rows = deckCfg.decks.map((d, i) => `
+    <div class="cfg-row">
+      <input class="cfg-name" data-i="${i}" placeholder="Nombre" value="${escapeHtml(d.name || "")}" />
+      <input class="cfg-id" data-i="${i}" inputmode="numeric" placeholder="Archidekt ID" value="${escapeHtml(String(d.archideck_id || ""))}" />
+      <input class="cfg-folder" data-i="${i}" list="folderOptions" placeholder="Carpeta ManaBox (opcional)" value="${escapeHtml(d.manaboxFolder || "")}" />
+      <button class="cfg-del" data-i="${i}" title="Borrar">🗑️</button>
+    </div>`).join("");
+
+  const freeHtml = freeFolders.length
+    ? `<div class="section-h">🗂️ Carpetas de ManaBox sin Archidekt (${freeFolders.length})</div>
+       <div class="chips">${freeFolders.map((f) => `<span class="chip free-folder" data-f="${escapeHtml(f)}">+ ${escapeHtml(f)}</span>`).join("")}</div>`
+    : (Object.keys(deckFolders).length ? `<div class="note">Todas tus carpetas de ManaBox tienen mazo. 👍</div>` : `<div class="note">Importa tu colección para ver las carpetas de ManaBox sin mazo.</div>`);
+
+  $("configBody").innerHTML = `
+    ${opts}
+    <div class="cfg-head"><span>Mazo</span><span>Archidekt ID</span><span>Carpeta</span><span></span></div>
+    ${rows}
+    <button class="btn secondary" id="cfgAdd" style="margin:10px 0;">➕ Añadir mazo</button>
+    ${freeHtml}
+    <div class="cm-actions" style="margin-top:16px;">
+      <button class="btn" id="cfgSave">💾 Guardar y aplicar</button>
+    </div>
+    <p class="note">Guardar escribe la config en tu repo privado y lanza el refresco de mazos. Las listas de cartas se actualizan en 1-2 min.</p>`;
+
+  // Binding por referencia al objeto (no por índice de render).
+  $("configBody").querySelectorAll(".cfg-name").forEach((el) => { el.oninput = () => { deckCfg.decks[+el.dataset.i].name = el.value; }; });
+  $("configBody").querySelectorAll(".cfg-id").forEach((el) => { el.oninput = () => { deckCfg.decks[+el.dataset.i].archideck_id = el.value.replace(/[^0-9]/g, ""); }; });
+  $("configBody").querySelectorAll(".cfg-folder").forEach((el) => { el.oninput = () => { deckCfg.decks[+el.dataset.i].manaboxFolder = el.value; }; });
+  $("configBody").querySelectorAll(".cfg-del").forEach((el) => { el.onclick = () => { deckCfg.decks.splice(+el.dataset.i, 1); drawConfig(isSeed); }; });
+  $("configBody").querySelectorAll(".free-folder").forEach((el) => {
+    el.onclick = () => { deckCfg.decks.push({ name: el.dataset.f, archideck_id: "", manaboxFolder: el.dataset.f }); drawConfig(isSeed); };
+  });
+  $("cfgAdd").onclick = () => { deckCfg.decks.push({ name: "", archideck_id: "", manaboxFolder: "" }); drawConfig(isSeed); };
+  $("cfgSave").onclick = saveConfig;
+}
+
+async function saveConfig() {
+  const c = syncCfg();
+  const btn = $("cfgSave"); btn.disabled = true; const lbl = btn.textContent; btn.textContent = "Guardando…";
+  try {
+    const clean = {
+      decks: deckCfg.decks
+        .filter((d) => String(d.archideck_id || "").trim())
+        .map((d) => ({ name: (d.name || "").trim() || `Deck ${d.archideck_id}`, archideck_id: parseInt(d.archideck_id, 10), manaboxFolder: (d.manaboxFolder || "").trim() || undefined })),
+    };
+    const api = `https://api.github.com/repos/${c.owner}/${c.repo}/contents/decks-config.json`;
+    const body = { message: "update decks config", content: b64e(JSON.stringify(clean, null, 2)), branch: c.branch || "main" };
+    if (deckCfgSha) body.sha = deckCfgSha;
+    const res = await fetch(api, { method: "PUT", headers: { ...gh(c.token), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`Guardar: ${res.status} ${(await res.text()).slice(0, 140)}`);
+    deckCfgSha = (await res.json()).content.sha;
+
+    let dispatched = false;
+    try {
+      const { owner, repo } = publicRepoInfo();
+      const wf = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/update-decks.yml/dispatches`, {
+        method: "POST", headers: { ...gh(c.token), "Content-Type": "application/json" }, body: JSON.stringify({ ref: "main" }),
+      });
+      dispatched = wf.status === 204;
+    } catch { /* sin permiso Actions */ }
+
+    alert(`💾 Config guardada (${clean.decks.length} mazos).\n` +
+      (dispatched ? "🔄 Regenerando las listas de mazos… en 1-2 min estarán listas (recarga)." : "Se aplicará en el próximo refresco (o pulsa Run workflow en GitHub). Para que se lance sola, el token necesita permiso 'Actions: write' sobre el repo público."));
+  } catch (e) {
+    alert("❌ " + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = lbl;
+  }
+}
+
 // ── Navegación ──────────────────────────────────────────────────────────────
 const REPORTS = [
+  { id: "config", icon: "⚙️", name: "Configurar mazos", desc: "Añade/edita mazos y sus carpetas de ManaBox" },
   { id: "cardmarket", icon: "📋", name: "Lista Cardmarket", desc: "Cartas marcadas para comprar, con copias" },
   { id: "pedidas", icon: "🛒", name: "Pedidas", desc: "Cartas que ya has encargado" },
   { id: "vendibles", icon: "💰", name: "Cartas vendibles", desc: "Copias que te sobran (no las usa ningún mazo)" },
   { id: "conflictos", icon: "⚠️", name: "Conflictos de copias", desc: "Cartas que piden varios mazos y no te llegan" },
   { id: "info", icon: "📄", name: "Info / oracle de mazo", desc: "Cada mazo carta a carta, con reglas" },
 ];
-const VIEWS = { home: "dbHome", cardmarket: "cardmarketView", pedidas: "pedidasView", vendibles: "vendiblesView", conflictos: "conflictosView", info: "infoView" };
+const VIEWS = { home: "dbHome", config: "configView", cardmarket: "cardmarketView", pedidas: "pedidasView", vendibles: "vendiblesView", conflictos: "conflictosView", info: "infoView" };
 
 function showView(v) {
   Object.values(VIEWS).forEach((id) => $(id).classList.add("hidden"));
@@ -384,6 +512,7 @@ function openReport(id) {
   const r = REPORTS.find((x) => x.id === id);
   $("title").textContent = r ? `${r.icon} ${r.name}` : "Deck Builder";
   showView(id);
+  if (id === "config") renderConfig();
   if (id === "cardmarket") renderCardmarketList();
   if (id === "pedidas") renderPedidasList();
   if (id === "vendibles") renderVendibles();
