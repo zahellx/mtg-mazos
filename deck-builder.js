@@ -60,7 +60,7 @@ function importCSV(text) {
   const col = (...n) => { for (const x of n) { const i = h.indexOf(x); if (i >= 0) return i; } return -1; };
   const iName = col("name"), iQty = col("quantity"), iType = col("binder type"), iBinder = col("binder name");
   if (iName < 0 || iQty < 0) throw new Error("No encuentro columnas Name/Quantity. ¿Es un export de ManaBox?");
-  const byName = {}, folders = {}, poolMap = {};
+  const byName = {}, folders = {}, binderMap = {}, poolMap = {};
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i]; const name = (r[iName] || "").trim(); if (!name) continue;
     const bt = iType >= 0 ? norm(r[iType] || "") : ""; if (bt === "list") continue;
@@ -68,13 +68,13 @@ function importCSV(text) {
     const bn = iBinder >= 0 ? (r[iBinder] || "").trim() : "";
     byName[name] = (byName[name] || 0) + qty;
     if (bt === "deck") { (folders[bn] = folders[bn] || {}); folders[bn][name] = (folders[bn][name] || 0) + qty; }
-    else poolMap[name] = (poolMap[name] || 0) + qty;
+    else { poolMap[name] = (poolMap[name] || 0) + qty; const b = bn || "Sin carpeta"; (binderMap[b] = binderMap[b] || {}); binderMap[b][name] = (binderMap[b][name] || 0) + qty; }
   }
   collection = byName; deckFolders = folders; pool = poolMap;
   localStorage.setItem(COLLECTION_KEY, JSON.stringify(byName));
   // Conserva printings previos (los escribe "Mis Mazos"); aquí solo actualizamos lo que usamos.
   let prev = {}; try { prev = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {}; } catch {}
-  localStorage.setItem(COLLECTION_DATA_KEY, JSON.stringify({ deckFolders: folders, pool: poolMap, printings: prev.printings || [] }));
+  localStorage.setItem(COLLECTION_DATA_KEY, JSON.stringify({ deckFolders: folders, binders: binderMap, pool: poolMap, printings: prev.printings || [] }));
 }
 
 // ── Cartas vendibles: copias por encima de lo que piden todos los mazos ─────────

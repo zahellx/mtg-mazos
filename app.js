@@ -9,7 +9,8 @@ const CARDMARKET_KEY = "mtg-cardmarket-v1";   // {cardName: qty} lista para comp
 let decksData = null;       // { generatedAt, decks: [{name, manaboxFolder, commander, cards:[{name, quantity, type}]}] }
 let collection = {};        // cardName -> copias poseídas (total, todos los binders no-list)
 let deckFolders = {};       // folderName -> { cardName: qty }  (Binder Type = deck)
-let pool = {};              // cardName -> qty en binders NO-deck (archivador, bundles...)
+let binders = {};           // binderName -> { cardName: qty } (Binder Type != deck y != list)
+let pool = {};              // cardName -> qty en binders NO-deck (agregado; deriva de binders)
 let printings = [];         // [{scryfallId, name, foil, qty, setCode, collectorNumber, purchasePrice}]
 let orders = {};            // cardName -> true (marcada como pedida)
 let cardmarket = {};        // cardName -> qty (en la lista de compra de Cardmarket)
@@ -27,9 +28,10 @@ function loadCollection() {
   try {
     const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {};
     deckFolders = d.deckFolders || {};
+    binders = d.binders || {};
     pool = d.pool || {};
     printings = d.printings || [];
-  } catch { deckFolders = {}; pool = {}; printings = []; }
+  } catch { deckFolders = {}; binders = {}; pool = {}; printings = []; }
   try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
   try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
 }
@@ -87,6 +89,7 @@ function importCSV(text) {
 
   const byName = {};
   const folders = {};
+  const binderMap = {};
   const poolMap = {};
   const prints = [];
   for (let i = 1; i < rows.length; i++) {
@@ -105,6 +108,9 @@ function importCSV(text) {
       folders[binderName][name] = (folders[binderName][name] || 0) + qty;
     } else {
       poolMap[name] = (poolMap[name] || 0) + qty;
+      const bn = binderName || "Sin carpeta";
+      (binderMap[bn] = binderMap[bn] || {});
+      binderMap[bn][name] = (binderMap[bn][name] || 0) + qty;
     }
 
     const sid = idxSid >= 0 ? (r[idxSid] || "").trim() : "";
@@ -122,10 +128,11 @@ function importCSV(text) {
   }
   collection = byName;
   deckFolders = folders;
+  binders = binderMap;
   pool = poolMap;
   printings = prints;
   localStorage.setItem(COLLECTION_KEY, JSON.stringify(byName));
-  localStorage.setItem(COLLECTION_DATA_KEY, JSON.stringify({ deckFolders: folders, pool: poolMap, printings: prints }));
+  localStorage.setItem(COLLECTION_DATA_KEY, JSON.stringify({ deckFolders: folders, binders: binderMap, pool: poolMap, printings: prints }));
 }
 
 // ── Cambios por mazo: Archidekt vs carpeta física del mazo en ManaBox ─────────
@@ -168,10 +175,10 @@ const folderLabel = (folderName) => (folderToDeckNames[folderName] || []).join("
 const myFolderOf = (deck) => deckFolders[deck.manaboxFolder || deck.name] || {};
 
 // Para un mazo: cartas que le FALTAN físicamente (las pide Archidekt pero no están
-// en su carpeta de ManaBox) y DÓNDE están físicamente (en qué otra carpeta de mazo).
-//   - location "in-decks": está físicamente en la carpeta de otro(s) mazo(s).
-//   - location "pool":     la tienes suelta en un binder que no es de mazo.
-//   - location "nowhere":  no la tienes en ningún sitio.
+// en su carpeta de ManaBox) y DÓNDE están físicamente:
+//   - deckLocs:   en la carpeta de otro(s) mazo(s)
+//   - binderLocs: en otra(s) carpeta(s) que no son de mazo (archivador, etc.)
+//   - category:   'deck' | 'binder' | 'buy'  (prioridad mazo > carpeta > comprar)
 function missingForDeck(deck, includeBasics) {
   const myFolderName = deck.manaboxFolder || deck.name;
   const myFolder = deckFolders[myFolderName] || {};
@@ -182,19 +189,22 @@ function missingForDeck(deck, includeBasics) {
     if (have >= card.quantity) continue;          // está físicamente en este mazo -> no falta
     const needed = card.quantity - have;
 
-    // ¿En qué otras carpetas de mazo está físicamente?
-    const locations = [];
+    const deckLocs = [];
     for (const [folderName, cards] of Object.entries(deckFolders)) {
       if (folderName === myFolderName) continue;
       const q = cards[card.name] || 0;
-      if (q > 0) locations.push({ folder: folderName, name: folderLabel(folderName), qty: q });
+      if (q > 0) deckLocs.push({ name: folderLabel(folderName), qty: q });
     }
-    const inPool = pool[card.name] || 0;
-    const location = locations.length ? "in-decks" : (inPool > 0 ? "pool" : "nowhere");
-    out.push({ name: card.name, type: card.type || "", needed, locations, inPool, location });
+    const binderLocs = [];
+    for (const [binderName, cards] of Object.entries(binders)) {
+      const q = cards[card.name] || 0;
+      if (q > 0) binderLocs.push({ name: binderName, qty: q });
+    }
+    const category = deckLocs.length ? "deck" : (binderLocs.length ? "binder" : "buy");
+    out.push({ name: card.name, type: card.type || "", needed, deckLocs, binderLocs, category });
   }
-  const rank = { "in-decks": 0, pool: 1, nowhere: 2 };
-  out.sort((a, b) => (rank[a.location] - rank[b.location]) || a.name.localeCompare(b.name));
+  const rank = { deck: 0, binder: 1, buy: 2 };
+  out.sort((a, b) => (rank[a.category] - rank[b.category]) || a.name.localeCompare(b.name));
   return out;
 }
 
@@ -273,16 +283,23 @@ function renderConflicts() {
       <div>No le falta ninguna carta a este mazo: todo está en su carpeta física.</div></div>`;
     return;
   }
-  wrap.innerHTML = list.map((c) => {
-    let locHtml;
-    if (c.location === "in-decks") {
-      locHtml = `<div class="c-counts"><span class="loc">📍 Está en:</span></div>
-        <div class="chips">${c.locations.map((o) => `<span class="chip">${escapeHtml(o.name)}${o.qty > 1 ? " ×" + o.qty : ""}</span>`).join("")}</div>`;
-    } else if (c.location === "pool") {
-      locHtml = `<div class="c-counts"><span class="loc warn">📦 La tienes suelta en tu colección (${c.inPool}) — no en un mazo</span></div>`;
-    } else {
-      locHtml = `<div class="c-counts"><span class="loc bad">🛒 No la tienes — no está en ningún mazo</span></div>`;
-    }
+
+  const nDeck = list.filter((c) => c.category === "deck").length;
+  const nBinder = list.filter((c) => c.category === "binder").length;
+  const nBuy = list.filter((c) => c.category === "buy").length;
+  const summary = `<div class="summary">
+    <span class="s-item">🗂️ En otros mazos <b>${nDeck}</b></span>
+    <span class="s-item">📦 En otra carpeta <b>${nBinder}</b></span>
+    <span class="s-item">🛒 Por comprar <b>${nBuy}</b></span>
+  </div>`;
+
+  wrap.innerHTML = summary + list.map((c) => {
+    const icon = c.category === "deck" ? "🗂️" : c.category === "binder" ? "📦" : "🛒";
+    let locHtml = "";
+    if (c.deckLocs.length) locHtml += `<div class="loc-sec"><span class="loc-h">🗂️ mazo:</span>${chipsHtml(c.deckLocs)}</div>`;
+    if (c.binderLocs.length) locHtml += `<div class="loc-sec"><span class="loc-h">📦 carpetas:</span>${chipsHtml(c.binderLocs)}</div>`;
+    if (c.category === "buy") locHtml = `<div class="c-counts"><span class="loc bad">🛒 No la tienes — por comprar</span></div>`;
+
     const isOrdered = !!orders[c.name];
     const inCM = cardmarket[c.name] != null;
     const badges = (isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : "") +
@@ -292,7 +309,7 @@ function renderConflicts() {
       <input type="checkbox" class="sel" data-name="${escapeHtml(c.name)}" ${selected.has(c.name) ? "checked" : ""} />
       <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
       <div class="c-info">
-        <div class="c-name">${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name">${icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
@@ -301,7 +318,20 @@ function renderConflicts() {
   wrap.querySelectorAll(".sel").forEach((cb) => {
     cb.onchange = () => { cb.checked ? selected.add(cb.dataset.name) : selected.delete(cb.dataset.name); updateSelectionBar(); };
   });
+  // "+N más": al pulsar, muestra el resto de chips ocultos.
+  wrap.querySelectorAll(".chip.more").forEach((m) => {
+    m.onclick = () => { const hidden = m.nextElementSibling; if (hidden) hidden.classList.remove("hidden"); m.remove(); };
+  });
   updateSelectionBar();
+}
+
+// Chips con corte a 5 + "+N más" desplegable.
+function chipsHtml(items) {
+  const chip = (o) => `<span class="chip">${escapeHtml(o.name)}${o.qty > 1 ? " ×" + o.qty : ""}</span>`;
+  if (items.length <= 5) return `<div class="chips">${items.map(chip).join("")}</div>`;
+  const shown = items.slice(0, 5).map(chip).join("");
+  const hidden = items.slice(5).map(chip).join("");
+  return `<div class="chips">${shown}<span class="chip more" role="button">+${items.length - 5} más</span><span class="chips-more hidden">${hidden}</span></div>`;
 }
 
 function updateSelectionBar() {
