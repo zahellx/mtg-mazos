@@ -11,22 +11,15 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write   # para empujar la rama gh-pages
 
-# Evita despliegues solapados. cancel-in-progress: false — cancelar un deploy de
-# Pages a medias lo deja en "failed, try again later"; mejor dejar que termine.
 concurrency:
-  group: "pages"
+  group: "deploy-gh-pages"
   cancel-in-progress: false
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,14 +30,17 @@ jobs:
       - name: Descargar mazos de Archidekt
         run: node fetch-decks.js
 
-      - name: Configurar Pages
-        uses: actions/configure-pages@v5
-
-      - name: Subir artefacto (sitio estático)
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: "."
-
-      - name: Desplegar en GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publicar en la rama gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tmp="$(mktemp -d)"
+          # Copia el sitio (incluye data/decks-data.json recién generado); excluye control de versiones y basura.
+          rsync -a --exclude='.git' --exclude='node_modules' ./ "$tmp/"
+          touch "$tmp/.nojekyll"   # servir los ficheros tal cual, sin procesar con Jekyll
+          cd "$tmp"
+          git init -q
+          git checkout -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "deploy $(date -u +%FT%TZ)"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
