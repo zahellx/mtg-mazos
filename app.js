@@ -334,10 +334,11 @@ function addSelectedToCardmarket() {
 }
 
 function markSelectedOrdered() {
-  const names = [...selected];
+  const need = selectedNeeded();
+  const names = Object.keys(need);
   if (!names.length) return;
   let removedFromCM = false;
-  names.forEach((n) => { orders[n] = true; if (cardmarket[n] != null) { delete cardmarket[n]; removedFromCM = true; } });
+  names.forEach((n) => { orders[n] = need[n] || 1; if (cardmarket[n] != null) { delete cardmarket[n]; removedFromCM = true; } });
   saveOrders();
   if (removedFromCM) saveCardmarket(); // al pedirla, sale de la lista de "por comprar"
   selected.clear();

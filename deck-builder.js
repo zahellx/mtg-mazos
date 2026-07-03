@@ -5,12 +5,14 @@ const COLLECTION_KEY = "mtg-collection-v1";
 const COLLECTION_DATA_KEY = "mtg-collection-data-v1";
 
 const CARDMARKET_KEY = "mtg-cardmarket-v1";
+const ORDERS_KEY = "mtg-orders-v1";
 
 let decksData = null;
 let collection = {};      // {name: totalQty}
 let deckFolders = {};     // {folder: {name: qty}}
 let pool = {};            // {name: qty} en binders no-deck
 let cardmarket = {};      // {name: qty} lista de compra
+let orders = {};          // {name: qty|true} pedidas
 let priceByName = {};     // cache de precios EUR por nombre (para vendibles)
 
 const $ = (id) => document.getElementById(id);
@@ -24,11 +26,17 @@ function loadCollection() {
   try { const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {}; deckFolders = d.deckFolders || {}; pool = d.pool || {}; }
   catch { deckFolders = {}; pool = {}; }
   try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
+  try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
 }
 function saveCardmarket() {
   localStorage.setItem(CARDMARKET_KEY, JSON.stringify(cardmarket));
   if (window.mtgSync) window.mtgSync.afterImport();
 }
+function saveOrders() {
+  localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+  if (window.mtgSync) window.mtgSync.afterImport();
+}
+const qtyOf = (v) => (typeof v === "number" ? v : 1); // compat con pedidas antiguas ({name:true})
 const ownedOf = (name) => collection[name] ?? collection[name.split(" // ")[0]] ?? 0;
 
 // ── CSV (idéntico a Mis Mazos: mismo formato y mismas claves de almacenamiento) ──
@@ -267,14 +275,51 @@ function clearCardmarket() {
   renderCardmarketList();
 }
 
+// ── Lista de pedidas ───────────────────────────────────────────────────────────
+function pedidasText() {
+  return Object.entries(orders).sort((a, b) => a[0].localeCompare(b[0])).map(([name, v]) => `${qtyOf(v)} ${name}`).join("\n");
+}
+function renderPedidasList() {
+  const entries = Object.entries(orders).sort((a, b) => a[0].localeCompare(b[0]));
+  const totalCopies = entries.reduce((s, [, v]) => s + qtyOf(v), 0);
+  $("pedStatus").innerHTML = `${entries.length} cartas · ${totalCopies} copias pedidas`;
+  const wrap = $("pedidasList");
+  if (!entries.length) {
+    wrap.innerHTML = `<div class="empty"><div class="big">🛒</div><div>No hay cartas pedidas. En “Mis Mazos” → pestaña Faltan, selecciona cartas y pulsa “🛒 Pedidas”.</div></div>`;
+    return;
+  }
+  wrap.innerHTML = entries.map(([name, v]) => `
+    <div class="cm-row">
+      <img loading="lazy" src="${imgUrl(name)}" alt="${escapeHtml(name)}" onerror="this.style.visibility='hidden'" />
+      <div class="cm-name">${escapeHtml(name)}</div>
+      <div class="cm-qty">×${qtyOf(v)}</div>
+      <button class="cm-x" data-name="${escapeHtml(name)}" title="Quitar">×</button>
+    </div>`).join("");
+  wrap.querySelectorAll(".cm-x").forEach((b) => { b.onclick = () => { delete orders[b.dataset.name]; saveOrders(); renderPedidasList(); }; });
+}
+async function copyPedidasAll() {
+  const text = pedidasText();
+  if (!text) { alert("No hay cartas pedidas."); return; }
+  try { await navigator.clipboard.writeText(text); alert("📋 Lista de pedidas copiada."); }
+  catch { prompt("Lista de pedidas:", text); }
+}
+function clearPedidas() {
+  if (!Object.keys(orders).length) return;
+  if (!confirm("¿Vaciar toda la lista de pedidas?")) return;
+  orders = {};
+  saveOrders();
+  renderPedidasList();
+}
+
 // ── Navegación ──────────────────────────────────────────────────────────────
 const REPORTS = [
   { id: "cardmarket", icon: "📋", name: "Lista Cardmarket", desc: "Cartas marcadas para comprar, con copias" },
+  { id: "pedidas", icon: "🛒", name: "Pedidas", desc: "Cartas que ya has encargado" },
   { id: "vendibles", icon: "💰", name: "Cartas vendibles", desc: "Copias que te sobran (no las usa ningún mazo)" },
   { id: "conflictos", icon: "⚠️", name: "Conflictos de copias", desc: "Cartas que piden varios mazos y no te llegan" },
   { id: "info", icon: "📄", name: "Info / oracle de mazo", desc: "Cada mazo carta a carta, con reglas" },
 ];
-const VIEWS = { home: "dbHome", cardmarket: "cardmarketView", vendibles: "vendiblesView", conflictos: "conflictosView", info: "infoView" };
+const VIEWS = { home: "dbHome", cardmarket: "cardmarketView", pedidas: "pedidasView", vendibles: "vendiblesView", conflictos: "conflictosView", info: "infoView" };
 
 function showView(v) {
   Object.values(VIEWS).forEach((id) => $(id).classList.add("hidden"));
@@ -288,6 +333,7 @@ function openReport(id) {
   $("title").textContent = r ? `${r.icon} ${r.name}` : "Deck Builder";
   showView(id);
   if (id === "cardmarket") renderCardmarketList();
+  if (id === "pedidas") renderPedidasList();
   if (id === "vendibles") renderVendibles();
   if (id === "conflictos") renderConflictos();
   if (id === "info") renderInfo();
@@ -343,6 +389,8 @@ async function init() {
   };
   $("cmCopy").onclick = copyCardmarketAll;
   $("cmClear").onclick = clearCardmarket;
+  $("pedCopy").onclick = copyPedidasAll;
+  $("pedClear").onclick = clearPedidas;
   $("conflictosSearch").oninput = renderConflictos;
   $("conflictosBasics").onchange = renderConflictos;
   $("infoDeckSelect").onchange = renderInfo;
