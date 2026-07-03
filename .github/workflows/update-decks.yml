@@ -15,10 +15,11 @@ permissions:
   pages: write
   id-token: write
 
-# Evita despliegues solapados
+# Evita despliegues solapados. cancel-in-progress: false — cancelar un deploy de
+# Pages a medias lo deja en "failed, try again later"; mejor dejar que termine.
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
