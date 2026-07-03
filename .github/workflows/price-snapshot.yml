@@ -1,0 +1,27 @@
+name: Registro diario de precios
+
+on:
+  # Todos los días a la misma hora (07:00 UTC). Cambia la hora si quieres.
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read   # solo lee este repo; los datos se escriben en el repo privado vía token
+
+concurrency:
+  group: "price-snapshot"
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Registrar snapshot de precios
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: node snapshot-prices.js
