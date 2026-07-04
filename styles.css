@@ -202,6 +202,24 @@ a { color: var(--accent); }
 .selection-bar button { border: none; border-radius: 10px; padding: 10px 12px; font-weight: 600; font-size: 13.5px; cursor: pointer; }
 .selection-bar .cm { background: var(--accent); color: #0b0e14; }
 .selection-bar .ord { background: var(--warn); color: #241a08; }
+/* Modal de carta */
+.modal { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal-box { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; max-width: 460px; width: 100%; max-height: 92vh; overflow-y: auto; position: relative; padding: 16px; }
+.modal-close { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(0,0,0,.5); border: 1px solid var(--border); color: var(--text); width: 34px; height: 34px; border-radius: 50%; font-size: 16px; cursor: pointer; }
+.modal-img { width: 100%; max-width: 320px; display: block; margin: 0 auto 12px; border-radius: 12px; }
+.modal-name { font-size: 17px; font-weight: 700; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.modal-cost { font-size: 14px; color: var(--muted); white-space: nowrap; }
+.modal-type { font-size: 13px; color: var(--accent); margin-top: 3px; }
+.modal-text { font-size: 13.5px; color: var(--text); white-space: pre-wrap; line-height: 1.5; margin-top: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 14px; }
+.modal-actions button { flex: 1; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); border-radius: 10px; padding: 10px 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.modal-actions button.on { border-color: transparent; }
+.modal-actions button.cm.on { background: var(--accent); color: #0b0e14; }
+.modal-actions button.ord.on { background: var(--warn); color: #241a08; }
+.modal-actions button.prx.on { background: #9b6cff; color: #150a25; }
+.modal-links { display: flex; gap: 10px; margin-top: 12px; }
+.modal-links a { flex: 1; text-align: center; padding: 10px; border: 1px solid var(--border); border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 13.5px; }
+
 .section-h { font-size: 13px; color: var(--muted); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
 .total-line { font-size: 13px; color: var(--muted); margin: 4px 0 14px; }
 .total-line b { color: var(--ok); }

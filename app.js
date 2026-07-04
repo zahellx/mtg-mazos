@@ -338,11 +338,11 @@ function renderConflicts() {
       (isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : "") +
       (inCM ? ' <span class="cm-badge">📋 Cardmarket</span>' : "");
     return `
-    <div class="conflict${isOrdered ? " ordered" : ""}${proxy ? " proxied" : ""}">
+    <div class="conflict${isOrdered ? " ordered" : ""}${proxy ? " proxied" : ""}" data-card="${escapeHtml(c.name)}">
       <input type="checkbox" class="sel" data-name="${escapeHtml(c.name)}" ${selected.has(c.name) ? "checked" : ""} />
-      <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
+      <img loading="lazy" class="card-open" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
       <div class="c-info">
-        <div class="c-name">${proxy ? "🎭" : icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name card-open">${proxy ? "🎭" : icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
@@ -361,6 +361,10 @@ function renderConflicts() {
   wrap.querySelectorAll(".sel").forEach((cb) => {
     cb.onchange = () => { cb.checked ? selected.add(cb.dataset.name) : selected.delete(cb.dataset.name); updateSelectionBar(); };
   });
+  // Abrir modal al pulsar la imagen o el nombre de la carta.
+  wrap.querySelectorAll(".card-open").forEach((el) => {
+    el.onclick = () => { const row = el.closest(".conflict"); if (row) openCardModal(row.dataset.card); };
+  });
   // "+N más": al pulsar, muestra el resto de chips ocultos.
   wrap.querySelectorAll(".chip.more").forEach((m) => {
     m.onclick = () => { const hidden = m.nextElementSibling; if (hidden) hidden.classList.remove("hidden"); m.remove(); };
@@ -375,6 +379,77 @@ function chipsHtml(items) {
   const shown = items.slice(0, 5).map(chip).join("");
   const hidden = items.slice(5).map(chip).join("");
   return `<div class="chips">${shown}<span class="chip more" role="button">+${items.length - 5} más</span><span class="chips-more hidden">${hidden}</span></div>`;
+}
+
+// ── Modal de carta ─────────────────────────────────────────────────────────────
+const cardCache = {}; // name -> objeto Scryfall
+let modalCard = null;
+
+const neededOf = (name) => (lastMissingList.find((c) => c.name === name)?.needed) || 1;
+
+async function openCardModal(name) {
+  modalCard = name;
+  $("cardModal").classList.remove("hidden");
+  $("modalBody").innerHTML = `<div class="empty"><div class="big">⏳</div><div>Cargando ${escapeHtml(name)}…</div></div>`;
+  let card = cardCache[name];
+  if (!card) {
+    try {
+      const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`);
+      if (res.ok) { card = await res.json(); cardCache[name] = card; }
+    } catch (_) { /* sin datos, mostramos lo básico */ }
+  }
+  if (modalCard !== name) return; // se abrió otra mientras cargaba
+  renderCardModal(name, card);
+}
+
+function closeCardModal() { modalCard = null; $("cardModal").classList.add("hidden"); }
+
+function renderCardModal(name, card) {
+  const dn = currentDeck ? currentDeck.name : "";
+  const faces = card && card.card_faces ? card.card_faces : null;
+  const img = card ? (card.image_uris?.normal || faces?.[0]?.image_uris?.normal || imgUrl(name)) : imgUrl(name);
+  const cost = card ? (card.mana_cost || (faces || []).map((f) => f.mana_cost).filter(Boolean).join("  //  ")) : "";
+  const type = card ? (card.type_line || "") : "";
+  const text = card ? (card.oracle_text || (faces || []).map((f) => `${f.name}\n${f.oracle_text || ""}`).join("\n\n—\n\n")) : "";
+  const cmUrl = card?.purchase_uris?.cardmarket || `https://www.cardmarket.com/en/Magic/Products/Search?searchString=${encodeURIComponent(name)}`;
+  const sfUrl = card?.scryfall_uri || `https://scryfall.com/search?q=${encodeURIComponent('!"' + name + '"')}`;
+  const proxy = isProxy(dn, name), ped = orders[name] != null, inCM = cardmarket[name] != null;
+
+  $("modalBody").innerHTML = `
+    <img class="modal-img" src="${img}" alt="${escapeHtml(name)}" onerror="this.style.display='none'" />
+    <div class="modal-info">
+      <div class="modal-name"><span>${escapeHtml(name)}</span>${cost ? `<span class="modal-cost">${escapeHtml(cost)}</span>` : ""}</div>
+      ${type ? `<div class="modal-type">${escapeHtml(type)}</div>` : ""}
+      ${text ? `<div class="modal-text">${escapeHtml(text)}</div>` : ""}
+      <div class="modal-actions">
+        <button class="cm${inCM ? " on" : ""}" data-a="cardmarket">📋 Cardmarket</button>
+        <button class="ord${ped ? " on" : ""}" data-a="pedida">🛒 Pedida</button>
+        <button class="prx${proxy ? " on" : ""}" data-a="proxy">🎭 Proxy</button>
+      </div>
+      <div class="modal-links">
+        <a href="${cmUrl}" target="_blank" rel="noopener">🛒 Cardmarket ↗</a>
+        <a href="${sfUrl}" target="_blank" rel="noopener">🔎 Scryfall ↗</a>
+      </div>
+    </div>`;
+  $("modalBody").querySelectorAll(".modal-actions button").forEach((b) => { b.onclick = () => modalAction(b.dataset.a, name); });
+}
+
+function modalAction(a, name) {
+  const dn = currentDeck.name;
+  if (a === "proxy") {
+    proxies[dn] = proxies[dn] || {};
+    if (proxies[dn][name]) delete proxies[dn][name]; else proxies[dn][name] = true;
+    if (!Object.keys(proxies[dn]).length) delete proxies[dn];
+    saveProxies();
+  } else if (a === "pedida") {
+    if (orders[name] != null) { delete orders[name]; saveOrders(); }
+    else { orders[name] = neededOf(name); if (cardmarket[name] != null) { delete cardmarket[name]; saveCardmarket(); } saveOrders(); }
+  } else if (a === "cardmarket") {
+    if (cardmarket[name] != null) delete cardmarket[name]; else cardmarket[name] = Math.max(cardmarket[name] || 0, neededOf(name));
+    saveCardmarket();
+  }
+  renderCardModal(name, cardCache[name]);
+  renderConflicts();
 }
 
 function updateSelectionBar() {
@@ -720,6 +795,10 @@ async function init() {
     reader.readAsText(file);
     e.target.value = "";
   };
+
+  $("modalClose").onclick = closeCardModal;
+  $("cardModal").onclick = (e) => { if (e.target === $("cardModal")) closeCardModal(); };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("cardModal").classList.contains("hidden")) closeCardModal(); });
 
   $("backBtn").onclick = goHome;
   $("deckSearch").oninput = (e) => renderDecks(e.target.value);
