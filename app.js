@@ -271,6 +271,7 @@ function matchFilter(key, c, dn) {
   if (key === "deck") return c.category === "deck";
   if (key === "binder") return c.category === "binder";
   if (key === "buy") return c.category === "buy" && !isProxy(dn, c.name);
+  if (key === "nospare") return c.deckLocs.length > 0 && c.binderLocs.length === 0; // en otro mazo y sin suelta
   if (key === "proxy") return isProxy(dn, c.name);
   if (key === "pedida") return orders[c.name] != null;
   if (key === "cardmarket") return cardmarket[c.name] != null;
@@ -312,6 +313,7 @@ function renderConflicts() {
   // Contadores (sobre el conjunto buscado, antes de aplicar filtros de estado) = botones-filtro.
   const FILTERS = [
     { key: "deck", label: "🗂️ En otros mazos" },
+    { key: "nospare", label: "🔒 Sin copia libre" },
     { key: "binder", label: "📦 En otra carpeta" },
     { key: "buy", label: "🛒 Por comprar" },
     { key: "proxy", label: "🎭 Con proxy" },
