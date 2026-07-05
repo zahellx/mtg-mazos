@@ -508,9 +508,11 @@ function showView(v) {
   window.scrollTo(0, 0);
 }
 
+const DB_NAV_KEY = "mtg-db-nav";
 function openReport(id) {
   const r = REPORTS.find((x) => x.id === id);
   $("title").textContent = r ? `${r.icon} ${r.name}` : "Deck Builder";
+  try { sessionStorage.setItem(DB_NAV_KEY, id); } catch (_) {}
   showView(id);
   if (id === "config") renderConfig();
   if (id === "cardmarket") renderCardmarketList();
@@ -519,7 +521,7 @@ function openReport(id) {
   if (id === "conflictos") renderConflictos();
   if (id === "info") renderInfo();
 }
-function goHome() { $("title").textContent = "🛠️ Deck Builder"; showView("home"); }
+function goHome() { $("title").textContent = "🛠️ Deck Builder"; try { sessionStorage.setItem(DB_NAV_KEY, "home"); } catch (_) {} showView("home"); }
 
 function renderMenu() {
   $("reportMenu").innerHTML = REPORTS.map((r) => `
@@ -578,6 +580,12 @@ async function init() {
   $("conflictosBasics").onchange = renderConflictos;
   $("infoDeckSelect").onchange = renderInfo;
   $("infoSearch").oninput = renderInfo;
+
+  // Restaurar el reporte abierto antes de recargar.
+  try {
+    const last = sessionStorage.getItem(DB_NAV_KEY);
+    if (last && last !== "home" && VIEWS[last]) openReport(last);
+  } catch (_) {}
 }
 
 if ("serviceWorker" in navigator) {

@@ -518,6 +518,8 @@ function toggleSelectAll() {
 }
 
 let currentTab = "missing";
+const NAV_KEY = "mtg-nav";
+const saveNav = (s) => { try { sessionStorage.setItem(NAV_KEY, JSON.stringify(s)); } catch (_) {} };
 
 function renderChanges() {
   const wrap = $("changesList");
@@ -567,9 +569,9 @@ function renderDeckTab() {
   if (missing) { renderConflicts(); } else { $("selectionBar").classList.add("hidden"); renderChanges(); }
 }
 
-function openDeck(deck) {
+function openDeck(deck, tab = "missing") {
   currentDeck = deck;
-  currentTab = "missing";
+  currentTab = tab;
   selected.clear();
   $("homeView").classList.add("hidden");
   $("priceView").classList.add("hidden");
@@ -579,6 +581,7 @@ function openDeck(deck) {
   $("cardSearch").value = "";
   activeFilters.clear();
   window.scrollTo(0, 0);
+  saveNav({ view: "deck", deck: deck.name, tab: currentTab });
   renderDeckTab();
 }
 
@@ -590,6 +593,7 @@ function openPrices() {
   $("backBtn").classList.remove("hidden");
   $("title").textContent = "Movimientos de precio";
   window.scrollTo(0, 0);
+  saveNav({ view: "price" });
   renderPrices();
 }
 
@@ -600,6 +604,7 @@ function goHome() {
   $("homeView").classList.remove("hidden");
   $("backBtn").classList.add("hidden");
   $("title").textContent = "Mis Mazos MTG";
+  saveNav({ view: "home" });
   renderDecks($("deckSearch").value);
 }
 
@@ -775,6 +780,17 @@ async function init() {
     setTimeout(() => alert(`✅ Colección importada desde ManaBox: ${Object.keys(collection).length} cartas distintas.`), 100);
   }
 
+  // Restaurar la vista donde estabas antes de recargar.
+  try {
+    const nav = JSON.parse(sessionStorage.getItem(NAV_KEY) || "null");
+    if (nav && nav.view === "deck") {
+      const d = decksData.decks.find((x) => x.name === nav.deck);
+      if (d) openDeck(d, nav.tab || "missing");
+    } else if (nav && nav.view === "price") {
+      openPrices();
+    }
+  } catch (_) { /* nav corrupta: se queda en inicio */ }
+
   $("importBtn").onclick = () => $("csvInput").click();
   $("csvInput").onchange = (e) => {
     const file = e.target.files[0];
@@ -810,7 +826,7 @@ async function init() {
   $("markProxy").onclick = markSelectedProxy;
 
   document.querySelectorAll(".tab").forEach((t) => {
-    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); activeFilters.clear(); renderDeckTab(); };
+    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); activeFilters.clear(); saveNav({ view: "deck", deck: currentDeck.name, tab: currentTab }); renderDeckTab(); };
   });
 
   $("pricesNav").onclick = openPrices;
