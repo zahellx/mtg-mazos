@@ -17,6 +17,7 @@ let orders = {};            // cardName -> true (marcada como pedida)
 let cardmarket = {};        // cardName -> qty (en la lista de compra de Cardmarket)
 let proxies = {};           // deckName -> { cardName: true } (proxy en ese mazo)
 let selected = new Set();   // selección actual en la vista "Faltan"
+let selectionMode = false;  // true tras mantener pulsado: los taps seleccionan
 let activeFilters = new Set(); // filtros de estado activos (botones-contador)
 let currentDeck = null;
 
@@ -323,6 +324,10 @@ function renderConflicts() {
     return `<button type="button" class="s-item${active}" data-f="${f.key}">${f.label} <b>${n}</b></button>`;
   }).join("") + `</div>`;
 
+  const hint = selectionMode
+    ? `<div class="hint">Modo selección: toca para marcar · ✕ para salir</div>`
+    : `<div class="hint">Toca una carta para verla · mantén pulsado para seleccionar</div>`;
+
   const rowsHtml = list.length
     ? list.map((c) => {
     const proxy = isProxy(dn, c.name);
@@ -338,18 +343,18 @@ function renderConflicts() {
       (isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : "") +
       (inCM ? ' <span class="cm-badge">📋 Cardmarket</span>' : "");
     return `
-    <div class="conflict${isOrdered ? " ordered" : ""}${proxy ? " proxied" : ""}" data-card="${escapeHtml(c.name)}">
-      <input type="checkbox" class="sel" data-name="${escapeHtml(c.name)}" ${selected.has(c.name) ? "checked" : ""} />
-      <img loading="lazy" class="card-open" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
+    <div class="conflict${isOrdered ? " ordered" : ""}${proxy ? " proxied" : ""}${selected.has(c.name) ? " selected" : ""}" data-card="${escapeHtml(c.name)}">
+      <span class="sel-check">✓</span>
+      <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
       <div class="c-info">
-        <div class="c-name card-open">${proxy ? "🎭" : icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name">${proxy ? "🎭" : icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
       }).join("")
     : `<div class="empty"><div class="muted">Sin cartas con los filtros activos.</div></div>`;
 
-  wrap.innerHTML = summary + rowsHtml;
+  wrap.innerHTML = summary + hint + rowsHtml;
 
   wrap.querySelectorAll(".s-item").forEach((b) => {
     b.onclick = () => {
@@ -358,18 +363,42 @@ function renderConflicts() {
       renderConflicts();
     };
   });
-  wrap.querySelectorAll(".sel").forEach((cb) => {
-    cb.onchange = () => { cb.checked ? selected.add(cb.dataset.name) : selected.delete(cb.dataset.name); updateSelectionBar(); };
+  // Tap = abrir carta; mantener pulsado = seleccionar (y entrar en modo selección).
+  wrap.querySelectorAll(".conflict").forEach((row) => {
+    const name = row.dataset.card;
+    let timer = null, longPressed = false;
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    row.addEventListener("pointerdown", () => {
+      longPressed = false;
+      timer = setTimeout(() => { longPressed = true; selectionMode = true; toggleSelectRow(row, name); if (navigator.vibrate) navigator.vibrate(25); }, 420);
+    });
+    row.addEventListener("pointerup", cancel);
+    row.addEventListener("pointerleave", cancel);
+    row.addEventListener("pointermove", cancel); // si mueve (scroll), no cuenta como mantener
+    row.addEventListener("click", () => {
+      if (longPressed) { longPressed = false; return; }
+      if (selectionMode) toggleSelectRow(row, name);
+      else openCardModal(name);
+    });
   });
-  // Abrir modal al pulsar la imagen o el nombre de la carta.
-  wrap.querySelectorAll(".card-open").forEach((el) => {
-    el.onclick = () => { const row = el.closest(".conflict"); if (row) openCardModal(row.dataset.card); };
-  });
-  // "+N más": al pulsar, muestra el resto de chips ocultos.
+  // "+N más": al pulsar, muestra el resto de chips ocultos (sin activar la fila).
   wrap.querySelectorAll(".chip.more").forEach((m) => {
-    m.onclick = () => { const hidden = m.nextElementSibling; if (hidden) hidden.classList.remove("hidden"); m.remove(); };
+    m.onclick = (e) => { e.stopPropagation(); const hidden = m.nextElementSibling; if (hidden) hidden.classList.remove("hidden"); m.remove(); };
   });
   updateSelectionBar();
+}
+
+function toggleSelectRow(row, name) {
+  if (selected.has(name)) { selected.delete(name); row.classList.remove("selected"); }
+  else { selected.add(name); row.classList.add("selected"); }
+  if (selected.size === 0) selectionMode = false;
+  updateSelectionBar();
+}
+
+function clearSelection() {
+  selected.clear();
+  selectionMode = false;
+  renderConflicts();
 }
 
 // Chips con corte a 5 + "+N más" desplegable.
@@ -477,6 +506,7 @@ function addSelectedToCardmarket() {
   names.forEach((n) => { cardmarket[n] = Math.max(cardmarket[n] || 0, need[n] || 1); });
   saveCardmarket();
   selected.clear();
+  selectionMode = false;
   renderConflicts();
   alert(`📋 ${names.length} carta(s) añadidas a la lista de Cardmarket.\nVe a Deck Builder → “Lista Cardmarket” para copiarla entera.`);
 }
@@ -490,6 +520,7 @@ function markSelectedOrdered() {
   saveOrders();
   if (removedFromCM) saveCardmarket(); // al pedirla, sale de la lista de "por comprar"
   selected.clear();
+  selectionMode = false;
   renderConflicts();
   alert(`🛒 ${names.length} carta(s) marcadas como pedidas.`);
 }
@@ -505,6 +536,7 @@ function markSelectedProxy() {
   if (!Object.keys(proxies[dn]).length) delete proxies[dn];
   saveProxies();
   selected.clear();
+  selectionMode = false;
   renderConflicts();
   alert(allProxy ? `🎭 Quitado el proxy de ${names.length} carta(s).` : `🎭 ${names.length} carta(s) marcadas como proxy en “${dn}”.`);
 }
@@ -512,8 +544,8 @@ function markSelectedProxy() {
 function toggleSelectAll() {
   const visible = lastMissingList.map((c) => c.name);
   const allSel = visible.length && visible.every((n) => selected.has(n));
-  if (allSel) selected.clear();
-  else visible.forEach((n) => selected.add(n));
+  if (allSel) { selected.clear(); selectionMode = false; }
+  else { visible.forEach((n) => selected.add(n)); selectionMode = true; }
   renderConflicts();
 }
 
@@ -573,6 +605,7 @@ function openDeck(deck, tab = "missing") {
   currentDeck = deck;
   currentTab = tab;
   selected.clear();
+  selectionMode = false;
   $("homeView").classList.add("hidden");
   $("priceView").classList.add("hidden");
   $("deckView").classList.remove("hidden");
@@ -821,12 +854,13 @@ async function init() {
   $("cardSearch").oninput = () => renderDeckTab();
   $("basicsToggle").onchange = () => renderDeckTab();
   $("selectAllBtn").onclick = toggleSelectAll;
+  $("cancelSelection").onclick = clearSelection;
   $("addCardmarket").onclick = addSelectedToCardmarket;
   $("markOrdered").onclick = markSelectedOrdered;
   $("markProxy").onclick = markSelectedProxy;
 
   document.querySelectorAll(".tab").forEach((t) => {
-    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); activeFilters.clear(); saveNav({ view: "deck", deck: currentDeck.name, tab: currentTab }); renderDeckTab(); };
+    t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); selectionMode = false; activeFilters.clear(); saveNav({ view: "deck", deck: currentDeck.name, tab: currentTab }); renderDeckTab(); };
   });
 
   $("pricesNav").onclick = openPrices;
