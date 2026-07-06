@@ -28,9 +28,15 @@ async function main() {
   if (!getRes.ok) throw new Error(`GET ${getRes.status}: ${(await getRes.text()).slice(0, 200)}`);
   const meta = await getRes.json();
   const bundle = JSON.parse(b64d(meta.content));
-  const data = bundle.data || {};
+  // Formato v2 {keys:{k:{ts,value}}} o v1 antiguo {data:{k:value}} -> normalizamos a keys.
+  const keys = bundle.keys || {};
+  if (!bundle.keys && bundle.data) {
+    const ts = bundle.updatedAt || 1;
+    for (const [k, value] of Object.entries(bundle.data)) keys[k] = { ts, value };
+  }
+  const getVal = (k) => (keys[k] ? keys[k].value : undefined);
 
-  const cdata = data["mtg-collection-data-v1"] ? JSON.parse(data["mtg-collection-data-v1"]) : {};
+  const cdata = getVal("mtg-collection-data-v1") ? JSON.parse(getVal("mtg-collection-data-v1")) : {};
   const printings = cdata.printings || [];
   if (!printings.length) { console.log("La colección subida no tiene printings con Scryfall ID; nada que hacer."); return; }
 
@@ -62,19 +68,18 @@ async function main() {
   }
   if (!Object.keys(snap).length) { console.log("No obtuve precios; salgo sin cambios."); return; }
 
-  const snaps = data["mtg-price-snapshots-v1"] ? JSON.parse(data["mtg-price-snapshots-v1"]) : {};
+  const snaps = getVal("mtg-price-snapshots-v1") ? JSON.parse(getVal("mtg-price-snapshots-v1")) : {};
   const today = dateStr(new Date());
   snaps[today] = snap;
   const dates = Object.keys(snaps).sort();
   while (dates.length > MAX_SNAPS) delete snaps[dates.shift()];
-  data["mtg-price-snapshots-v1"] = JSON.stringify(snaps);
-  bundle.data = data;
-  bundle.updatedAt = Date.now();
+  keys["mtg-price-snapshots-v1"] = { ts: Date.now(), value: JSON.stringify(snaps) };
+  const newBundle = { app: "mtg-mazos", v: 2, updatedAt: Date.now(), keys };
 
   const putRes = await fetch(api, {
     method: "PUT",
     headers: { ...ghHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ message: `price snapshot ${today}`, content: b64e(JSON.stringify(bundle)), sha: meta.sha, branch: BRANCH }),
+    body: JSON.stringify({ message: `price snapshot ${today}`, content: b64e(JSON.stringify(newBundle)), sha: meta.sha, branch: BRANCH }),
   });
   if (!putRes.ok) throw new Error(`PUT ${putRes.status}: ${(await putRes.text()).slice(0, 200)}`);
   console.log(`✅ Snapshot ${today} guardado (${Object.keys(snap).length} precios, ${dates.length} fechas en histórico).`);
