@@ -235,6 +235,10 @@ a { color: var(--accent); }
 .modal-actions button.prx.on { background: #9b6cff; color: #150a25; }
 .modal-links { display: flex; gap: 10px; margin-top: 12px; }
 .modal-links a { flex: 1; text-align: center; padding: 10px; border: 1px solid var(--border); border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 13.5px; }
+.ver-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ver { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px; text-align: center; }
+.ver img { width: 100%; border-radius: 8px; }
+.ver .ver-info { font-size: 12px; color: var(--muted); margin-top: 6px; font-weight: 600; }
 
 .section-h { font-size: 13px; color: var(--muted); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
 .total-line { font-size: 13px; color: var(--muted); margin: 4px 0 14px; }

@@ -39,7 +39,24 @@ function loadCollection() {
   try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
   try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
   try { proxies = JSON.parse(localStorage.getItem(PROXIES_KEY)) || {}; } catch { proxies = {}; }
+  buildPrintingsIndex();
 }
+
+// Índice nombre -> printings que TIENES (agrupados por scryfallId+foil, qty sumada).
+let printingsByName = {};
+function buildPrintingsIndex() {
+  printingsByName = {};
+  for (const p of printings) {
+    if (!p.scryfallId) continue;
+    const arr = (printingsByName[p.name] = printingsByName[p.name] || []);
+    const ex = arr.find((x) => x.scryfallId === p.scryfallId && x.foil === p.foil);
+    if (ex) ex.qty += p.qty; else arr.push({ ...p });
+  }
+}
+function ownedPrintings(name) {
+  return printingsByName[name] || printingsByName[name.split(" // ")[0]] || [];
+}
+const ownedSid = (name) => ownedPrintings(name)[0]?.scryfallId || null;
 function saveOrders() {
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
   if (window.mtgSync) window.mtgSync.afterImport();
@@ -141,6 +158,7 @@ function importCSV(text) {
   binders = binderMap;
   pool = poolMap;
   printings = prints;
+  buildPrintingsIndex();
   localStorage.setItem(COLLECTION_KEY, JSON.stringify(byName));
   localStorage.setItem(COLLECTION_DATA_KEY, JSON.stringify({ deckFolders: folders, binders: binderMap, pool: poolMap, printings: prints }));
 }
@@ -241,9 +259,11 @@ const IMG_PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAA
 function imgUrl(name) {
   return `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=small`;
 }
-// <img> que carga vía el cargador robusto (img.js) por nombre.
+// <img> que carga vía el cargador robusto (img.js). Si tienes la carta, usa el
+// printing de TU colección (data-sid) para que la foto coincida con tu copia física.
 function cardImgTag(name, cls) {
-  return `<img loading="lazy" class="${cls || ""}" data-name="${escapeHtml(name)}" src="${IMG_PLACEHOLDER}" alt="${escapeHtml(name)}" />`;
+  const sid = ownedSid(name);
+  return `<img loading="lazy" class="${cls || ""}" data-name="${escapeHtml(name)}"${sid ? ` data-sid="${escapeHtml(sid)}"` : ""} src="${IMG_PLACEHOLDER}" alt="${escapeHtml(name)}" />`;
 }
 
 function renderCollectionStatus() {
@@ -437,75 +457,38 @@ function chipsHtml(items) {
   return `<div class="chips">${shown}<span class="chip more" role="button">+${items.length - 5} más</span><span class="chips-more hidden">${hidden}</span></div>`;
 }
 
-// ── Modal de carta ─────────────────────────────────────────────────────────────
-const cardCache = {}; // name -> objeto Scryfall
-let modalCard = null;
-
+// ── Modal de carta (compartido: card-modal.js) ────────────────────────────────
 const neededOf = (name) => (lastMissingList.find((c) => c.name === name)?.needed) || 1;
+const openCardModal = (name) => window.cardModal && window.cardModal.open(name);
 
-async function openCardModal(name) {
-  modalCard = name;
-  $("cardModal").classList.remove("hidden");
-  $("modalBody").innerHTML = `<div class="empty"><div class="big">⏳</div><div>Cargando ${escapeHtml(name)}…</div></div>`;
-  let card = cardCache[name];
-  if (!card) {
-    try {
-      const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`);
-      if (res.ok) { card = await res.json(); cardCache[name] = card; }
-    } catch (_) { /* sin datos, mostramos lo básico */ }
-  }
-  if (modalCard !== name) return; // se abrió otra mientras cargaba
-  renderCardModal(name, card);
-}
-
-function closeCardModal() { modalCard = null; $("cardModal").classList.add("hidden"); }
-
-function renderCardModal(name, card) {
-  const dn = currentDeck ? currentDeck.name : "";
-  const faces = card && card.card_faces ? card.card_faces : null;
-  const img = card ? (card.image_uris?.normal || faces?.[0]?.image_uris?.normal || imgUrl(name)) : imgUrl(name);
-  const cost = card ? (card.mana_cost || (faces || []).map((f) => f.mana_cost).filter(Boolean).join("  //  ")) : "";
-  const type = card ? (card.type_line || "") : "";
-  const text = card ? (card.oracle_text || (faces || []).map((f) => `${f.name}\n${f.oracle_text || ""}`).join("\n\n—\n\n")) : "";
-  const cmUrl = card?.purchase_uris?.cardmarket || `https://www.cardmarket.com/en/Magic/Products/Search?searchString=${encodeURIComponent(name)}`;
-  const sfUrl = card?.scryfall_uri || `https://scryfall.com/search?q=${encodeURIComponent('!"' + name + '"')}`;
-  const proxy = isProxy(dn, name), ped = orders[name] != null, inCM = cardmarket[name] != null;
-
-  $("modalBody").innerHTML = `
-    <img class="modal-img" src="${img}" alt="${escapeHtml(name)}" onerror="this.style.display='none'" />
-    <div class="modal-info">
-      <div class="modal-name"><span>${escapeHtml(name)}</span>${cost ? `<span class="modal-cost">${escapeHtml(cost)}</span>` : ""}</div>
-      ${type ? `<div class="modal-type">${escapeHtml(type)}</div>` : ""}
-      ${text ? `<div class="modal-text">${escapeHtml(text)}</div>` : ""}
-      <div class="modal-actions">
-        <button class="cm${inCM ? " on" : ""}" data-a="cardmarket">📋 Cardmarket</button>
-        <button class="ord${ped ? " on" : ""}" data-a="pedida">🛒 Pedida</button>
-        <button class="prx${proxy ? " on" : ""}" data-a="proxy">🎭 Proxy</button>
-      </div>
-      <div class="modal-links">
-        <a href="${cmUrl}" target="_blank" rel="noopener">🛒 Cardmarket ↗</a>
-        <a href="${sfUrl}" target="_blank" rel="noopener">🔎 Scryfall ↗</a>
-      </div>
-    </div>`;
-  $("modalBody").querySelectorAll(".modal-actions button").forEach((b) => { b.onclick = () => modalAction(b.dataset.a, name); });
-}
-
-function modalAction(a, name) {
-  const dn = currentDeck.name;
-  if (a === "proxy") {
-    proxies[dn] = proxies[dn] || {};
-    if (proxies[dn][name]) delete proxies[dn][name]; else proxies[dn][name] = true;
-    if (!Object.keys(proxies[dn]).length) delete proxies[dn];
-    saveProxies();
-  } else if (a === "pedida") {
-    if (orders[name] != null) { delete orders[name]; saveOrders(); }
-    else { orders[name] = neededOf(name); if (cardmarket[name] != null) { delete cardmarket[name]; saveCardmarket(); } saveOrders(); }
-  } else if (a === "cardmarket") {
-    if (cardmarket[name] != null) delete cardmarket[name]; else cardmarket[name] = Math.max(cardmarket[name] || 0, neededOf(name));
-    saveCardmarket();
-  }
-  renderCardModal(name, cardCache[name]);
-  renderConflicts();
+function configureCardModal() {
+  window.cardModal.configure({
+    printings: (name) => ownedPrintings(name),
+    actions: (name) => {
+      const acts = [
+        { label: "📋 Cardmarket", cls: "cm", on: cardmarket[name] != null, run: () => {
+            if (cardmarket[name] != null) delete cardmarket[name];
+            else cardmarket[name] = Math.max(cardmarket[name] || 0, neededOf(name));
+            saveCardmarket();
+          } },
+        { label: "🛒 Pedida", cls: "ord", on: orders[name] != null, run: () => {
+            if (orders[name] != null) { delete orders[name]; saveOrders(); }
+            else { orders[name] = neededOf(name); if (cardmarket[name] != null) { delete cardmarket[name]; saveCardmarket(); } saveOrders(); }
+          } },
+      ];
+      if (currentDeck) {
+        const dn = currentDeck.name;
+        acts.push({ label: "🎭 Proxy", cls: "prx", on: isProxy(dn, name), run: () => {
+          proxies[dn] = proxies[dn] || {};
+          if (proxies[dn][name]) delete proxies[dn][name]; else proxies[dn][name] = true;
+          if (!Object.keys(proxies[dn]).length) delete proxies[dn];
+          saveProxies();
+        } });
+      }
+      return acts;
+    },
+    onChange: () => { if (currentDeck) renderDeckTab(); },
+  });
 }
 
 function updateSelectionBar() {
@@ -604,7 +587,7 @@ function renderChanges() {
     return;
   }
   const row = (c, kind) => `
-    <div class="change-row">
+    <div class="change-row" data-card="${escapeHtml(c.name)}">
       ${cardImgTag(c.name)}
       <div class="cr-info">
         <div class="cr-name">${escapeHtml(c.name)}</div>
@@ -618,6 +601,7 @@ function renderChanges() {
     (add.length ? `<div class="change-section"><h3>➕ Meter en el mazo (${add.length})</h3>${add.map((c) => row(c, "add")).join("")}</div>` : "") +
     (rem.length ? `<div class="change-section"><h3>➖ Sacar del mazo (${rem.length})</h3>${rem.map((c) => row(c, "rem")).join("")}</div>` : "");
   if (window.mtgImg) window.mtgImg.load(wrap);
+  wrap.querySelectorAll(".change-row").forEach((r) => { r.onclick = () => openCardModal(r.dataset.card); });
 }
 
 function renderDeckTab() {
@@ -873,9 +857,7 @@ async function init() {
     e.target.value = "";
   };
 
-  $("modalClose").onclick = closeCardModal;
-  $("cardModal").onclick = (e) => { if (e.target === $("cardModal")) closeCardModal(); };
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("cardModal").classList.contains("hidden")) closeCardModal(); });
+  configureCardModal();
 
   $("backBtn").onclick = goHome;
   $("deckSearch").oninput = (e) => renderDecks(e.target.value);

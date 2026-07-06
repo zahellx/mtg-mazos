@@ -21,15 +21,30 @@ const hasCollection = () => Object.keys(collection).length > 0;
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const imgUrl = (name) => `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=small`;
 const IMG_PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
-const cardImgTag = (name) => `<img loading="lazy" data-name="${escapeHtml(name)}" src="${IMG_PLACEHOLDER}" alt="${escapeHtml(name)}" />`;
+const cardImgTag = (name) => {
+  const sid = typeof ownedSid === "function" ? ownedSid(name) : null;
+  return `<img loading="lazy" data-name="${escapeHtml(name)}"${sid ? ` data-sid="${escapeHtml(sid)}"` : ""} src="${IMG_PLACEHOLDER}" alt="${escapeHtml(name)}" />`;
+};
 
+let printingsByName = {};
 function loadCollection() {
   try { collection = JSON.parse(localStorage.getItem(COLLECTION_KEY)) || {}; } catch { collection = {}; }
-  try { const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {}; deckFolders = d.deckFolders || {}; pool = d.pool || {}; }
+  let prints = [];
+  try { const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {}; deckFolders = d.deckFolders || {}; pool = d.pool || {}; prints = d.printings || []; }
   catch { deckFolders = {}; pool = {}; }
   try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
   try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
+  // Índice nombre -> printings que tienes (para foto de tu copia y "Versiones").
+  printingsByName = {};
+  for (const p of prints) {
+    if (!p.scryfallId) continue;
+    const arr = (printingsByName[p.name] = printingsByName[p.name] || []);
+    const ex = arr.find((x) => x.scryfallId === p.scryfallId && x.foil === p.foil);
+    if (ex) ex.qty += p.qty; else arr.push({ ...p });
+  }
 }
+const ownedPrintings = (name) => printingsByName[name] || printingsByName[name.split(" // ")[0]] || [];
+const ownedSid = (name) => ownedPrintings(name)[0]?.scryfallId || null;
 function saveCardmarket() {
   localStorage.setItem(CARDMARKET_KEY, JSON.stringify(cardmarket));
   if (window.mtgSync) window.mtgSync.afterImport();
@@ -129,7 +144,7 @@ function renderVendibles() {
     (hasPrices ? ` · valor ≈ <b>${totalVal.toFixed(2)}€</b>` : ` · pulsa 💶 Precios para valorarlas`);
 
   $("vendiblesList").innerHTML = list.length ? list.map((c) => `
-    <div class="price-row">
+    <div class="price-row" data-card="${escapeHtml(c.name)}">
       ${cardImgTag(c.name)}
       <div class="p-info">
         <div class="p-name">${escapeHtml(c.name)}</div>
@@ -165,7 +180,7 @@ function renderConflictos() {
   const list = filter ? list0.filter((c) => norm(c.name).includes(filter)) : list0;
   $("conflictosStatus").innerHTML = `${list0.length} cartas en conflicto (las usan varios mazos y no tienes copias para todos)`;
   $("conflictosList").innerHTML = list.length ? list.map((c) => `
-    <div class="conflict">
+    <div class="conflict" data-card="${escapeHtml(c.name)}">
       ${cardImgTag(c.name)}
       <div class="c-info">
         <div class="c-name">${escapeHtml(c.name)}</div>
@@ -233,7 +248,7 @@ async function renderInfo() {
     order.map((g) => {
       const items = groups[g].sort((a, b) => (a.cmc - b.cmc) || a.name.localeCompare(b.name));
       return `<div class="section-h">${g} (${items.reduce((s, r) => s + r.quantity, 0)})</div>` + items.map((r) => `
-        <div class="oracle-row">
+        <div class="oracle-row" data-card="${escapeHtml(r.name)}">
           <div class="o-head"><div class="o-name">${r.quantity > 1 ? r.quantity + "× " : ""}${escapeHtml(r.name)}</div><div class="o-cost">${escapeHtml(r.mana_cost)}</div></div>
           <div class="o-type">${escapeHtml(r.type_line)}</div>
           ${r.oracle_text ? `<div class="o-text">${escapeHtml(r.oracle_text)}</div>` : ""}
@@ -274,7 +289,7 @@ function renderCardmarketList() {
   wrap.innerHTML = bulk + entries.map(([name, qty]) => {
     const ok = !need.has(name);
     return `
-    <div class="cm-row${ok ? " stale" : ""}">
+    <div class="cm-row${ok ? " stale" : ""}" data-card="${escapeHtml(name)}">
       ${cardImgTag(name)}
       <div class="cm-name">${escapeHtml(name)}${ok ? ` <span class="stale-badge">ya no hace falta</span>` : ""}</div>
       <div class="cm-qty">×${qty}</div>
@@ -313,7 +328,7 @@ function renderPedidasList() {
     return;
   }
   wrap.innerHTML = entries.map(([name, v]) => `
-    <div class="cm-row">
+    <div class="cm-row" data-card="${escapeHtml(name)}">
       ${cardImgTag(name)}
       <div class="cm-name">${escapeHtml(name)}</div>
       <div class="cm-qty">×${qtyOf(v)}</div>
@@ -604,6 +619,35 @@ async function init() {
   $("conflictosBasics").onchange = renderConflictos;
   $("infoDeckSelect").onchange = renderInfo;
   $("infoSearch").oninput = renderInfo;
+
+  // Modal de carta compartido: foto de tu copia, versiones y estados CM/pedida.
+  const rerenderCurrent = () => {
+    const last = (() => { try { return sessionStorage.getItem(DB_NAV_KEY); } catch { return null; } })();
+    if (last === "cardmarket") renderCardmarketList();
+    if (last === "pedidas") renderPedidasList();
+    if (last === "vendibles") renderVendibles();
+    if (last === "conflictos") renderConflictos();
+  };
+  window.cardModal.configure({
+    printings: (name) => ownedPrintings(name),
+    actions: (name) => [
+      { label: "📋 Cardmarket", cls: "cm", on: cardmarket[name] != null, run: () => {
+          if (cardmarket[name] != null) delete cardmarket[name]; else cardmarket[name] = 1;
+          saveCardmarket();
+        } },
+      { label: "🛒 Pedida", cls: "ord", on: orders[name] != null, run: () => {
+          if (orders[name] != null) { delete orders[name]; saveOrders(); }
+          else { orders[name] = 1; if (cardmarket[name] != null) { orders[name] = qtyOf(cardmarket[name]); delete cardmarket[name]; saveCardmarket(); } saveOrders(); }
+        } },
+    ],
+    onChange: rerenderCurrent,
+  });
+  // Delegación: cualquier fila con data-card abre el modal (salvo que toques un botón).
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("button, a, input, select")) return;
+    const row = e.target.closest("[data-card]");
+    if (row) window.cardModal.open(row.dataset.card);
+  });
 
   // Restaurar el reporte abierto antes de recargar.
   try {
