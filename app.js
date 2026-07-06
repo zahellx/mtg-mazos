@@ -370,6 +370,12 @@ function renderConflicts() {
     return `<button type="button" class="s-item${active}" data-f="${f.key}">${f.label} <b>${n}</b></button>`;
   }).join("") + `</div>`;
 
+  // Cartas de ESTE mazo marcadas para Cardmarket (para copiarlas solas).
+  const cmInDeck = missingForDeck(currentDeck, true).filter((c) => cardmarket[c.name] != null);
+  const cmBtn = cmInDeck.length
+    ? `<button type="button" class="btn secondary" id="copyDeckCM" style="margin-bottom:12px;">📋 Copiar lista Cardmarket de este mazo (${cmInDeck.length})</button>`
+    : "";
+
   const hint = selectionMode
     ? `<div class="hint">Modo selección: toca para marcar · ✕ para salir</div>`
     : `<div class="hint">Toca una carta para verla · mantén pulsado para seleccionar</div>`;
@@ -400,8 +406,19 @@ function renderConflicts() {
       }).join("")
     : `<div class="empty"><div class="muted">Sin cartas con los filtros activos.</div></div>`;
 
-  wrap.innerHTML = summary + hint + rowsHtml;
+  wrap.innerHTML = summary + cmBtn + hint + rowsHtml;
   if (window.mtgImg) window.mtgImg.load(wrap);
+
+  const cmb = $("copyDeckCM");
+  if (cmb) cmb.onclick = async (e) => {
+    e.stopPropagation();
+    const text = cmInDeck
+      .map((c) => `${cardmarket[c.name] || c.needed || 1} ${c.name}`)
+      .sort((a, b) => a.localeCompare(b))
+      .join("\n");
+    try { await navigator.clipboard.writeText(text); alert(`📋 Copiadas ${cmInDeck.length} cartas de “${currentDeck.name}”. Pégalas en Cardmarket → Want List.`); }
+    catch { prompt("Copia esta lista para Cardmarket:", text); }
+  };
 
   wrap.querySelectorAll(".s-item").forEach((b) => {
     b.onclick = () => {
