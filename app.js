@@ -224,9 +224,26 @@ function deckMissingCount(deck) {
   return missingForDeck(deck, false).length;
 }
 
+// Dos cifras por mazo: faltan pero están en otro mazo/carpeta (avail) vs no las tienes (buy).
+// Los proxies no cuentan (están resueltos). null si no hay carpeta física.
+function deckCounts(deck) {
+  if (Object.keys(myFolderOf(deck)).length === 0) return null;
+  let avail = 0, buy = 0;
+  for (const c of missingForDeck(deck, false)) {
+    if (isProxy(deck.name, c.name)) continue;
+    if (c.category === "buy") buy++; else avail++;
+  }
+  return { avail, buy };
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
+const IMG_PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 function imgUrl(name) {
   return `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=small`;
+}
+// <img> que carga vía el cargador robusto (img.js) por nombre.
+function cardImgTag(name, cls) {
+  return `<img loading="lazy" class="${cls || ""}" data-name="${escapeHtml(name)}" src="${IMG_PLACEHOLDER}" alt="${escapeHtml(name)}" />`;
 }
 
 function renderCollectionStatus() {
@@ -250,7 +267,14 @@ function renderDecks(filter = "") {
     .sort((a, b) => (deckMissingCount(b) || 0) - (deckMissingCount(a) || 0) || a.name.localeCompare(b.name));
 
   for (const deck of decks) {
-    const count = hasCollection() ? deckMissingCount(deck) : null; // null = sin carpeta física
+    const cnt = hasCollection() ? deckCounts(deck) : null; // null = sin carpeta física
+    let badge;
+    if (cnt == null) badge = `<div class="badge">–</div>`;
+    else if (!cnt.avail && !cnt.buy) badge = `<div class="badge zero">✓</div>`;
+    else badge = `<div class="badge-pair">
+        <span class="bp avail" title="Faltan, pero están en otro mazo/carpeta">🔁 ${cnt.avail}</span>
+        <span class="bp buy" title="No las tienes: por comprar">🛒 ${cnt.buy}</span>
+      </div>`;
     const el = document.createElement("div");
     el.className = "deck-card";
     el.innerHTML = `
@@ -258,7 +282,7 @@ function renderDecks(filter = "") {
         <div class="name">${escapeHtml(deck.name)}</div>
         <div class="sub">${deck.commander ? "👑 " + escapeHtml(deck.commander) : deck.cards.length + " cartas"}</div>
       </div>
-      <div class="badge ${count == null ? "" : count ? "some" : "zero"}">${count == null ? "–" : count || "✓"}</div>`;
+      ${badge}`;
     el.onclick = () => openDeck(deck);
     grid.appendChild(el);
   }
@@ -347,7 +371,7 @@ function renderConflicts() {
     return `
     <div class="conflict${isOrdered ? " ordered" : ""}${proxy ? " proxied" : ""}${selected.has(c.name) ? " selected" : ""}" data-card="${escapeHtml(c.name)}">
       <span class="sel-check">✓</span>
-      <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
+      ${cardImgTag(c.name)}
       <div class="c-info">
         <div class="c-name">${proxy ? "🎭" : icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
@@ -357,6 +381,7 @@ function renderConflicts() {
     : `<div class="empty"><div class="muted">Sin cartas con los filtros activos.</div></div>`;
 
   wrap.innerHTML = summary + hint + rowsHtml;
+  if (window.mtgImg) window.mtgImg.load(wrap);
 
   wrap.querySelectorAll(".s-item").forEach((b) => {
     b.onclick = () => {
@@ -580,7 +605,7 @@ function renderChanges() {
   }
   const row = (c, kind) => `
     <div class="change-row">
-      <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
+      ${cardImgTag(c.name)}
       <div class="cr-info">
         <div class="cr-name">${escapeHtml(c.name)}</div>
         <div class="cr-sub">${kind === "add"
@@ -592,6 +617,7 @@ function renderChanges() {
   wrap.innerHTML =
     (add.length ? `<div class="change-section"><h3>➕ Meter en el mazo (${add.length})</h3>${add.map((c) => row(c, "add")).join("")}</div>` : "") +
     (rem.length ? `<div class="change-section"><h3>➖ Sacar del mazo (${rem.length})</h3>${rem.map((c) => row(c, "rem")).join("")}</div>` : "");
+  if (window.mtgImg) window.mtgImg.load(wrap);
 }
 
 function renderDeckTab() {

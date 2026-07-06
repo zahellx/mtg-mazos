@@ -20,6 +20,8 @@ const norm = (s) => s.trim().toLowerCase();
 const hasCollection = () => Object.keys(collection).length > 0;
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const imgUrl = (name) => `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=small`;
+const IMG_PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+const cardImgTag = (name) => `<img loading="lazy" data-name="${escapeHtml(name)}" src="${IMG_PLACEHOLDER}" alt="${escapeHtml(name)}" />`;
 
 function loadCollection() {
   try { collection = JSON.parse(localStorage.getItem(COLLECTION_KEY)) || {}; } catch { collection = {}; }
@@ -128,7 +130,7 @@ function renderVendibles() {
 
   $("vendiblesList").innerHTML = list.length ? list.map((c) => `
     <div class="price-row">
-      <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
+      ${cardImgTag(c.name)}
       <div class="p-info">
         <div class="p-name">${escapeHtml(c.name)}</div>
         <div class="p-sub">Tienes ${c.total} · el mazo pide ${c.need} · <b style="color:var(--ok)">sobran ${c.extra}</b></div>
@@ -164,7 +166,7 @@ function renderConflictos() {
   $("conflictosStatus").innerHTML = `${list0.length} cartas en conflicto (las usan varios mazos y no tienes copias para todos)`;
   $("conflictosList").innerHTML = list.length ? list.map((c) => `
     <div class="conflict">
-      <img loading="lazy" src="${imgUrl(c.name)}" alt="${escapeHtml(c.name)}" onerror="this.style.visibility='hidden'" />
+      ${cardImgTag(c.name)}
       <div class="c-info">
         <div class="c-name">${escapeHtml(c.name)}</div>
         <div class="c-counts">Tienes <span class="have">${c.owned}</span> · necesitan <span class="need">${c.needed}</span> · faltan ${c.missing}</div>
@@ -243,23 +245,45 @@ async function renderInfo() {
 function cardmarketText() {
   return Object.entries(cardmarket).sort((a, b) => a[0].localeCompare(b[0])).map(([name, qty]) => `${qty} ${name}`).join("\n");
 }
+
+// Conjunto de cartas que faltan físicamente en al menos un mazo (Archidekt vs su carpeta ManaBox).
+function neededAnywhere() {
+  const need = new Set();
+  for (const dk of decksData.decks) {
+    const folder = deckFolders[dk.manaboxFolder || dk.name] || {};
+    for (const c of dk.cards) {
+      if ((folder[c.name] || 0) < c.quantity) need.add(c.name);
+    }
+  }
+  return need;
+}
+
 function renderCardmarketList() {
   const entries = Object.entries(cardmarket).sort((a, b) => a[0].localeCompare(b[0]));
   const totalCopies = entries.reduce((s, [, q]) => s + q, 0);
-  $("cmStatus").innerHTML = `${entries.length} cartas · ${totalCopies} copias en total`;
+  const need = neededAnywhere();
+  const stale = entries.filter(([n]) => !need.has(n)).map(([n]) => n);
+  $("cmStatus").innerHTML = `${entries.length} cartas · ${totalCopies} copias en total` +
+    (stale.length ? ` · <span style="color:var(--warn)">⚠️ ${stale.length} ya no hacen falta</span>` : "");
   const wrap = $("cardmarketList");
   if (!entries.length) {
-    wrap.innerHTML = `<div class="empty"><div class="big">📋</div><div>Lista vacía. En “Mis Mazos” → pestaña Faltan, selecciona cartas y pulsa “📋 A Cardmarket”.</div></div>`;
+    wrap.innerHTML = `<div class="empty"><div class="big">📋</div><div>Lista vacía. En “Mis Mazos” → pestaña Faltan, selecciona cartas y pulsa “📋 CM”.</div></div>`;
     return;
   }
-  wrap.innerHTML = entries.map(([name, qty]) => `
-    <div class="cm-row">
-      <img loading="lazy" src="${imgUrl(name)}" alt="${escapeHtml(name)}" onerror="this.style.visibility='hidden'" />
-      <div class="cm-name">${escapeHtml(name)}</div>
+  const bulk = stale.length ? `<button class="btn secondary" id="cmPurge" style="margin-bottom:12px;">🧹 Quitar las ${stale.length} que ya no hacen falta</button>` : "";
+  wrap.innerHTML = bulk + entries.map(([name, qty]) => {
+    const ok = !need.has(name);
+    return `
+    <div class="cm-row${ok ? " stale" : ""}">
+      ${cardImgTag(name)}
+      <div class="cm-name">${escapeHtml(name)}${ok ? ` <span class="stale-badge">ya no hace falta</span>` : ""}</div>
       <div class="cm-qty">×${qty}</div>
       <button class="cm-x" data-name="${escapeHtml(name)}" title="Quitar">×</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
   wrap.querySelectorAll(".cm-x").forEach((b) => { b.onclick = () => { delete cardmarket[b.dataset.name]; saveCardmarket(); renderCardmarketList(); }; });
+  const purge = $("cmPurge");
+  if (purge) purge.onclick = () => { stale.forEach((n) => delete cardmarket[n]); saveCardmarket(); renderCardmarketList(); };
 }
 async function copyCardmarketAll() {
   const text = cardmarketText();
@@ -290,7 +314,7 @@ function renderPedidasList() {
   }
   wrap.innerHTML = entries.map(([name, v]) => `
     <div class="cm-row">
-      <img loading="lazy" src="${imgUrl(name)}" alt="${escapeHtml(name)}" onerror="this.style.visibility='hidden'" />
+      ${cardImgTag(name)}
       <div class="cm-name">${escapeHtml(name)}</div>
       <div class="cm-qty">×${qtyOf(v)}</div>
       <button class="cm-x" data-name="${escapeHtml(name)}" title="Quitar">×</button>
