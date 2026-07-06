@@ -6,6 +6,7 @@ const COLLECTION_DATA_KEY = "mtg-collection-data-v1";
 
 const CARDMARKET_KEY = "mtg-cardmarket-v1";
 const ORDERS_KEY = "mtg-orders-v1";
+const SELL_KEY = "mtg-sell-v1";
 
 let decksData = null;
 let collection = {};      // {name: totalQty}
@@ -13,6 +14,7 @@ let deckFolders = {};     // {folder: {name: qty}}
 let pool = {};            // {name: qty} en binders no-deck
 let cardmarket = {};      // {name: qty} lista de compra
 let orders = {};          // {name: qty|true} pedidas
+let sellMarks = {};       // {name: true} marcadas "para vender"
 let priceByName = {};     // cache de precios EUR por nombre (para vendibles)
 
 const $ = (id) => document.getElementById(id);
@@ -34,6 +36,7 @@ function loadCollection() {
   catch { deckFolders = {}; pool = {}; }
   try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
   try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
+  try { sellMarks = JSON.parse(localStorage.getItem(SELL_KEY)) || {}; } catch { sellMarks = {}; }
   // Índice nombre -> printings que tienes (para foto de tu copia y "Versiones").
   printingsByName = {};
   for (const p of prints) {
@@ -51,6 +54,10 @@ function saveCardmarket() {
 }
 function saveOrders() {
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+  if (window.mtgSync) window.mtgSync.afterImport();
+}
+function saveSellMarks() {
+  localStorage.setItem(SELL_KEY, JSON.stringify(sellMarks));
   if (window.mtgSync) window.mtgSync.afterImport();
 }
 const qtyOf = (v) => (typeof v === "number" ? v : 1); // compat con pedidas antiguas ({name:true})
@@ -136,22 +143,47 @@ function renderVendibles() {
   if (!hasCollection()) { $("vendiblesStatus").textContent = "Importa tu colección primero."; $("vendiblesList").innerHTML = ""; return; }
   const list0 = sellableCards();
   const filter = norm($("vendiblesSearch").value);
-  const list = filter ? list0.filter((c) => norm(c.name).includes(filter)) : list0;
+  const minPrice = parseFloat($("vendMinPrice").value) || 0;
+  const minCopies = parseInt($("vendMinCopies").value, 10) || 0;
+  const onlySel = $("vendOnlySel").checked;
+
+  let list = list0;
+  if (filter) list = list.filter((c) => norm(c.name).includes(filter));
+  if (minPrice > 0) list = list.filter((c) => c.price >= minPrice);
+  if (minCopies > 0) list = list.filter((c) => c.extra >= minCopies);
+  if (onlySel) list = list.filter((c) => sellMarks[c.name]);
+
   const hasPrices = list0.some((c) => c.price > 0);
+  const marked = list0.filter((c) => sellMarks[c.name]);
+  const markedVal = marked.reduce((s, c) => s + c.value, 0);
   const totalVal = list0.reduce((s, c) => s + c.value, 0);
   const totalExtra = list0.reduce((s, c) => s + c.extra, 0);
   $("vendiblesStatus").innerHTML = `${list0.length} cartas con sobrantes (${totalExtra} copias)` +
-    (hasPrices ? ` · valor ≈ <b>${totalVal.toFixed(2)}€</b>` : ` · pulsa 💶 Precios para valorarlas`);
+    (hasPrices ? ` · valor ≈ <b>${totalVal.toFixed(2)}€</b>` : ` · pulsa 💶 Precios para valorarlas`) +
+    (marked.length ? ` · <span style="color:var(--ok)">✓ ${marked.length} para vender${hasPrices ? ` ≈ <b>${markedVal.toFixed(2)}€</b>` : ""}</span>` : "");
 
-  $("vendiblesList").innerHTML = list.length ? list.map((c) => `
-    <div class="price-row" data-card="${escapeHtml(c.name)}">
+  $("vendiblesList").innerHTML = list.length ? list.map((c) => {
+    const on = !!sellMarks[c.name];
+    return `
+    <div class="price-row${on ? " selling" : ""}" data-card="${escapeHtml(c.name)}">
+      <button class="sell-toggle${on ? " on" : ""}" data-sell="${escapeHtml(c.name)}" title="Marcar para vender">✓</button>
       ${cardImgTag(c.name)}
       <div class="p-info">
         <div class="p-name">${escapeHtml(c.name)}</div>
         <div class="p-sub">Tienes ${c.total} · el mazo pide ${c.need} · <b style="color:var(--ok)">sobran ${c.extra}</b></div>
       </div>
       <div class="delta">${c.price > 0 ? `<div class="pct up">${(c.price * c.extra).toFixed(2)}€</div><div class="abs">${c.price.toFixed(2)}€/u</div>` : ""}</div>
-    </div>`).join("") : `<div class="empty"><div class="big">✅</div><div>No hay cartas sobrantes para vender.</div></div>`;
+    </div>`;
+  }).join("") : `<div class="empty"><div class="big">✅</div><div>Nada que mostrar con estos filtros.</div></div>`;
+
+  $("vendiblesList").querySelectorAll(".sell-toggle").forEach((b) => {
+    b.onclick = () => {
+      const n = b.dataset.sell;
+      if (sellMarks[n]) delete sellMarks[n]; else sellMarks[n] = true;
+      saveSellMarks();
+      renderVendibles();
+    };
+  });
 }
 
 // ── Conflictos de copias: cartas en varios mazos sin copias suficientes ─────────
@@ -609,6 +641,9 @@ async function init() {
     try { const names = sellableCards().map((c) => c.name); btn.textContent = "Consultando…"; await fetchPricesFor(names); renderVendibles(); }
     finally { btn.disabled = false; btn.textContent = lbl; }
   };
+  $("vendMinPrice").oninput = renderVendibles;
+  $("vendMinCopies").oninput = renderVendibles;
+  $("vendOnlySel").onchange = renderVendibles;
   $("cmCopy").onclick = copyCardmarketAll;
   $("cmClear").onclick = clearCardmarket;
   $("pedCopy").onclick = copyPedidasAll;

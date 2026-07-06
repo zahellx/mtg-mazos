@@ -208,6 +208,14 @@ a { color: var(--accent); }
 .cm-row .cm-qty { font-weight: 700; color: var(--accent); }
 .cm-row .cm-x { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 4px; }
 .cm-row.stale { border-color: #5a4520; background: #2a2416; }
+/* Vendibles: marcar para vender + filtros */
+.mini-input { width: 92px; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 9px 10px; font-size: 13.5px; }
+.sell-toggle {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font-size: 14px; font-weight: 800;
+}
+.sell-toggle.on { background: var(--ok); border-color: var(--ok); color: #0b0e14; }
+.price-row.selling { border-color: #1f4d3a; background: #14211b; }
 .stale-badge { font-size: 11px; font-weight: 700; color: var(--warn); background: #3a2a14; border-radius: 6px; padding: 1px 7px; margin-left: 4px; }
 .cm-actions { display: flex; gap: 8px; margin-bottom: 14px; }
 .selection-bar {

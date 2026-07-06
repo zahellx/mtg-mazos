@@ -15,6 +15,7 @@
     "mtg-orders-v1",
     "mtg-cardmarket-v1",
     "mtg-proxies-v1",
+    "mtg-sell-v1",
   ];
 
   const getCfg = () => { try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch { return {}; } };

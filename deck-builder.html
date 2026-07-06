@@ -42,6 +42,11 @@
         <input type="search" id="vendiblesSearch" placeholder="Buscar carta..." />
         <button class="btn secondary" id="vendiblesPrices" style="width:auto; white-space:nowrap;">💶 Precios</button>
       </div>
+      <div class="filters">
+        <input type="number" id="vendMinPrice" placeholder="€ mín" min="0" step="0.5" inputmode="decimal" class="mini-input" />
+        <input type="number" id="vendMinCopies" placeholder="copias mín" min="1" inputmode="numeric" class="mini-input" />
+        <label class="toggle"><input type="checkbox" id="vendOnlySel" /> Solo marcadas</label>
+      </div>
       <div id="vendiblesList"></div>
     </section>
 
