@@ -246,12 +246,14 @@ function deckMissingCount(deck) {
 // Los proxies no cuentan (están resueltos). null si no hay carpeta física.
 function deckCounts(deck) {
   if (Object.keys(myFolderOf(deck)).length === 0) return null;
-  let avail = 0, buy = 0;
+  let inDecks = 0, inBinders = 0, buy = 0;
   for (const c of missingForDeck(deck, false)) {
     if (isProxy(deck.name, c.name)) continue;
-    if (c.category === "buy") buy++; else avail++;
+    if (c.category === "deck") inDecks++;
+    else if (c.category === "binder") inBinders++;
+    else buy++;
   }
-  return { avail, buy };
+  return { inDecks, inBinders, buy };
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -290,9 +292,10 @@ function renderDecks(filter = "") {
     const cnt = hasCollection() ? deckCounts(deck) : null; // null = sin carpeta física
     let badge;
     if (cnt == null) badge = `<div class="badge">–</div>`;
-    else if (!cnt.avail && !cnt.buy) badge = `<div class="badge zero">✓</div>`;
+    else if (!cnt.inDecks && !cnt.inBinders && !cnt.buy) badge = `<div class="badge zero">✓</div>`;
     else badge = `<div class="badge-pair">
-        <span class="bp avail" title="Faltan, pero están en otro mazo/carpeta">🔁 ${cnt.avail}</span>
+        <span class="bp avail" title="Faltan: están en otro mazo">🗂️ ${cnt.inDecks}</span>
+        <span class="bp binder" title="Faltan: están en otra carpeta (no mazo)">📦 ${cnt.inBinders}</span>
         <span class="bp buy" title="No las tienes: por comprar">🛒 ${cnt.buy}</span>
       </div>`;
     const el = document.createElement("div");
