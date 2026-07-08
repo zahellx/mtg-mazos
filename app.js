@@ -316,7 +316,7 @@ let lastMissingList = []; // faltantes visibles actuales (para Cardmarket / pedi
 // Predicado de cada filtro de estado para una carta del mazo actual.
 function matchFilter(key, c, dn) {
   if (key === "deck") return c.category === "deck";
-  if (key === "binder") return c.category === "binder";
+  if (key === "binder") return c.binderLocs.length > 0; // en alguna carpeta, aunque también esté en otro mazo
   if (key === "buy") return c.category === "buy" && !isProxy(dn, c.name);
   if (key === "nospare") return c.deckLocs.length > 0 && c.binderLocs.length === 0; // en otro mazo y sin suelta
   if (key === "proxy") return isProxy(dn, c.name);
