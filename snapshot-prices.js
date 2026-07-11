@@ -27,7 +27,14 @@ async function main() {
   if (getRes.status === 404) { console.log("No hay collection.json en la nube todavía; nada que hacer."); return; }
   if (!getRes.ok) throw new Error(`GET ${getRes.status}: ${(await getRes.text()).slice(0, 200)}`);
   const meta = await getRes.json();
-  const bundle = JSON.parse(b64d(meta.content));
+  // Ficheros >1MB: la API no incluye `content` en el JSON; hay que pedirlo en crudo.
+  let text = meta.content && meta.content.trim() ? b64d(meta.content) : null;
+  if (!text) {
+    const rawRes = await fetch(`${api}?ref=${BRANCH}`, { headers: { ...ghHeaders, Accept: "application/vnd.github.raw" } });
+    if (!rawRes.ok) throw new Error(`GET raw ${rawRes.status}`);
+    text = await rawRes.text();
+  }
+  const bundle = JSON.parse(text);
   // Formato v2 {keys:{k:{ts,value}}} o v1 antiguo {data:{k:value}} -> normalizamos a keys.
   const keys = bundle.keys || {};
   if (!bundle.keys && bundle.data) {

@@ -52,13 +52,21 @@
   function headers(cfg) { return { Authorization: `Bearer ${cfg.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }; }
 
   async function getRemote(cfg) {
-    const res = await fetch(apiBase(cfg) + `?ref=${cfg.branch || "main"}`, { headers: headers(cfg), cache: "no-store" });
+    const url = apiBase(cfg) + `?ref=${cfg.branch || "main"}`;
+    const res = await fetch(url, { headers: headers(cfg), cache: "no-store" });
     if (res.status === 404) return { exists: false, keys: {} };
     if (!res.ok) throw new Error(`GitHub GET ${res.status}`);
     const j = await res.json();
+    // Ficheros >1MB: `content` llega vacío; pedimos el contenido en crudo (hasta 100MB).
+    let text = j.content && j.content.trim() ? b64decode(j.content) : null;
+    if (text == null) {
+      const raw = await fetch(url, { headers: { ...headers(cfg), Accept: "application/vnd.github.raw" }, cache: "no-store" });
+      if (!raw.ok) throw new Error(`GitHub GET raw ${raw.status}`);
+      text = await raw.text();
+    }
     let keys = {};
     try {
-      const bundle = JSON.parse(b64decode(j.content));
+      const bundle = JSON.parse(text);
       if (bundle.keys) keys = bundle.keys; // v2
       else if (bundle.data) { // v1 antiguo: todas las claves con la fecha global
         const ts = bundle.updatedAt || 1;
