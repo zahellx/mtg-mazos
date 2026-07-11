@@ -77,7 +77,7 @@
         ${prints.map((p) => `
           <div class="ver">
             <img data-sid="${esc(p.scryfallId)}" data-name="${esc(name)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(name)}" />
-            <div class="ver-info">${esc((p.setCode || "").toUpperCase())}${p.collectorNumber ? " #" + esc(p.collectorNumber) : ""}${p.foil ? " ✨" : ""} · ×${p.qty}</div>
+            <div class="ver-info">${esc((p.setCode || "").toUpperCase())}${p.collectorNumber ? " #" + esc(p.collectorNumber) : ""}${p.language ? " · " + esc(p.language) : ""}${p.foil ? " ✨" : ""} · ×${p.qty}</div>
           </div>`).join("")}
       </div>`;
     if (window.mtgImg) window.mtgImg.load($("modalBody"));

@@ -49,7 +49,7 @@ function buildPrintingsIndex() {
   for (const p of printings) {
     if (!p.scryfallId) continue;
     const arr = (printingsByName[p.name] = printingsByName[p.name] || []);
-    const ex = arr.find((x) => x.scryfallId === p.scryfallId && x.foil === p.foil);
+    const ex = arr.find((x) => x.scryfallId === p.scryfallId && x.foil === p.foil && (x.language || "") === (p.language || ""));
     if (ex) ex.qty += p.qty; else arr.push({ ...p });
   }
 }
@@ -110,6 +110,7 @@ function importCSV(text) {
   const idxFoil = col("foil");
   const idxSet = col("set code", "set");
   const idxCn = col("collector number");
+  const idxLang = col("language");
   const idxSid = col("scryfall id");
   const idxPrice = col("purchase price", "price");
   if (idxName < 0 || idxQty < 0) throw new Error("No encuentro columnas Name/Quantity. ¿Es un export de ManaBox?");
@@ -149,6 +150,7 @@ function importCSV(text) {
         qty,
         setCode: idxSet >= 0 ? (r[idxSet] || "").trim() : "",
         collectorNumber: idxCn >= 0 ? (r[idxCn] || "").trim() : "",
+        language: idxLang >= 0 ? (r[idxLang] || "").trim().toUpperCase() : "",
         purchasePrice: idxPrice >= 0 ? parseFloat(r[idxPrice]) || 0 : 0,
       });
     }

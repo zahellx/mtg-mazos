@@ -42,9 +42,17 @@ function loadCollection() {
   for (const p of prints) {
     if (!p.scryfallId) continue;
     const arr = (printingsByName[p.name] = printingsByName[p.name] || []);
-    const ex = arr.find((x) => x.scryfallId === p.scryfallId && x.foil === p.foil);
+    const ex = arr.find((x) => x.scryfallId === p.scryfallId && x.foil === p.foil && (x.language || "") === (p.language || ""));
     if (ex) ex.qty += p.qty; else arr.push({ ...p });
   }
+}
+// Líneas estilo Archidekt con printing exacto e idioma: "2x Nombre (set) 123 *F* [ES]".
+function sellLinesFor(name, fallbackQty) {
+  const prints = ownedPrintings(name);
+  if (!prints.length) return [`${fallbackQty || 1}x ${name}`];
+  return prints.map((p) =>
+    `${p.qty}x ${name} (${(p.setCode || "?").toLowerCase()})${p.collectorNumber ? " " + p.collectorNumber : ""}${p.foil ? " *F*" : ""} [${(p.language || "EN").toUpperCase()}]`
+  );
 }
 const ownedPrintings = (name) => printingsByName[name] || printingsByName[name.split(" // ")[0]] || [];
 const ownedSid = (name) => ownedPrintings(name)[0]?.scryfallId || null;
@@ -185,6 +193,54 @@ function renderVendibles() {
       if (sellMarks[n]) delete sellMarks[n]; else sellMarks[n] = true;
       saveSellMarks();
       renderVendibles();
+    };
+  });
+}
+
+// ── Toda la colección por precio (marca "para vender" compartida con Vendibles) ──
+let colShown = 300; // filas visibles (paginación "Mostrar más")
+
+function renderColeccion() {
+  if (!hasCollection()) { $("colStatus").textContent = "Importa tu colección primero."; $("coleccionList").innerHTML = ""; return; }
+  const filter = norm($("colSearch").value);
+  const minPrice = parseFloat($("colMinPrice").value) || 0;
+  const onlySel = $("colOnlySel").checked;
+
+  let list = Object.entries(collection).map(([name, qty]) => ({ name, qty, price: priceByName[name] || 0 }));
+  if (filter) list = list.filter((c) => norm(c.name).includes(filter));
+  if (minPrice > 0) list = list.filter((c) => c.price >= minPrice);
+  if (onlySel) list = list.filter((c) => sellMarks[c.name]);
+  list.sort((a, b) => b.price - a.price || a.name.localeCompare(b.name));
+
+  const hasPrices = Object.keys(priceByName).length > 0;
+  const marked = list.filter((c) => sellMarks[c.name]);
+  const totalVal = list.reduce((s, c) => s + c.price * c.qty, 0);
+  $("colStatus").innerHTML = `${list.length} cartas` +
+    (hasPrices ? ` · valor ≈ <b>${totalVal.toFixed(2)}€</b>` : ` · pulsa 💶 Precios para ordenar por precio`) +
+    (marked.length ? ` · <span style="color:var(--ok)">✓ ${marked.length} para vender</span>` : "");
+
+  const visible = list.slice(0, colShown);
+  $("coleccionList").innerHTML = visible.length ? visible.map((c) => {
+    const on = !!sellMarks[c.name];
+    return `
+    <div class="price-row${on ? " selling" : ""}" data-card="${escapeHtml(c.name)}">
+      <button class="sell-toggle${on ? " on" : ""}" data-sell="${escapeHtml(c.name)}" title="Marcar para vender">✓</button>
+      ${cardImgTag(c.name)}
+      <div class="p-info">
+        <div class="p-name">${escapeHtml(c.name)}</div>
+        <div class="p-sub">×${c.qty} copia(s)</div>
+      </div>
+      <div class="delta">${c.price > 0 ? `<div class="pct up">${c.price.toFixed(2)}€</div>${c.qty > 1 ? `<div class="abs">${(c.price * c.qty).toFixed(2)}€ total</div>` : ""}` : ""}</div>
+    </div>`;
+  }).join("") : `<div class="empty"><div class="big">🤷</div><div>Nada que mostrar con estos filtros.</div></div>`;
+
+  $("colMore").classList.toggle("hidden", list.length <= colShown);
+  $("coleccionList").querySelectorAll(".sell-toggle").forEach((b) => {
+    b.onclick = () => {
+      const n = b.dataset.sell;
+      if (sellMarks[n]) delete sellMarks[n]; else sellMarks[n] = true;
+      saveSellMarks();
+      renderColeccion();
     };
   });
 }
@@ -570,10 +626,11 @@ const REPORTS = [
   { id: "cardmarket", icon: "📋", name: "Lista Cardmarket", desc: "Cartas marcadas para comprar, con copias" },
   { id: "pedidas", icon: "🛒", name: "Pedidas", desc: "Cartas que ya has encargado" },
   { id: "vendibles", icon: "💰", name: "Cartas vendibles", desc: "Copias que te sobran (no las usa ningún mazo)" },
+  { id: "coleccion", icon: "🗃️", name: "Toda la colección", desc: "Todas tus cartas por precio; marca para vender" },
   { id: "conflictos", icon: "⚠️", name: "Conflictos de copias", desc: "Cartas que piden varios mazos y no te llegan" },
   { id: "info", icon: "📄", name: "Info / oracle de mazo", desc: "Cada mazo carta a carta, con reglas" },
 ];
-const VIEWS = { home: "dbHome", config: "configView", cardmarket: "cardmarketView", pedidas: "pedidasView", vendibles: "vendiblesView", conflictos: "conflictosView", info: "infoView" };
+const VIEWS = { home: "dbHome", config: "configView", cardmarket: "cardmarketView", pedidas: "pedidasView", vendibles: "vendiblesView", coleccion: "coleccionView", conflictos: "conflictosView", info: "infoView" };
 
 function showView(v) {
   Object.values(VIEWS).forEach((id) => $(id).classList.add("hidden"));
@@ -592,6 +649,7 @@ function openReport(id) {
   if (id === "cardmarket") renderCardmarketList();
   if (id === "pedidas") renderPedidasList();
   if (id === "vendibles") renderVendibles();
+  if (id === "coleccion") { colShown = 300; renderColeccion(); }
   if (id === "conflictos") renderConflictos();
   if (id === "info") renderInfo();
 }
@@ -649,8 +707,30 @@ async function init() {
   $("vendOnlySel").onchange = renderVendibles;
   $("vendCopy").onclick = async () => {
     if (!lastVendiblesList.length) { alert("No hay cartas que copiar con los filtros actuales."); return; }
-    const text = lastVendiblesList.map((c) => `${c.extra} ${c.name}`).join("\n");
-    try { await navigator.clipboard.writeText(text); alert(`📋 Copiadas ${lastVendiblesList.length} cartas vendibles (con sus copias sobrantes).`); }
+    const text = lastVendiblesList.flatMap((c) => sellLinesFor(c.name, c.extra)).join("\n");
+    try { await navigator.clipboard.writeText(text); alert(`📋 Copiadas ${lastVendiblesList.length} cartas con versión e idioma exactos (formato Archidekt).`); }
+    catch { prompt("Copia esta lista:", text); }
+  };
+
+  const colRefresh = () => { colShown = 300; renderColeccion(); };
+  $("colSearch").oninput = colRefresh;
+  $("colMinPrice").oninput = colRefresh;
+  $("colOnlySel").onchange = colRefresh;
+  $("colMore").onclick = () => { colShown += 300; renderColeccion(); };
+  $("colPrices").onclick = async () => {
+    const btn = $("colPrices"); btn.disabled = true; const lbl = btn.textContent;
+    try {
+      const names = Object.keys(collection);
+      btn.textContent = "Consultando…";
+      await fetchPricesFor(names);
+      renderColeccion();
+    } finally { btn.disabled = false; btn.textContent = lbl; }
+  };
+  $("colCopy").onclick = async () => {
+    const marked = Object.keys(collection).filter((n) => sellMarks[n]);
+    if (!marked.length) { alert("No hay cartas marcadas para vender."); return; }
+    const text = marked.sort().flatMap((n) => sellLinesFor(n)).join("\n");
+    try { await navigator.clipboard.writeText(text); alert(`📋 Copiadas ${marked.length} cartas marcadas, con versión e idioma exactos.`); }
     catch { prompt("Copia esta lista:", text); }
   };
   $("cmCopy").onclick = copyCardmarketAll;
