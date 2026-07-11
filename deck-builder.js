@@ -365,31 +365,65 @@ function neededAnywhere() {
 }
 
 function renderCardmarketList() {
-  const entries = Object.entries(cardmarket).sort((a, b) => a[0].localeCompare(b[0]));
+  let entries = Object.entries(cardmarket).sort((a, b) => a[0].localeCompare(b[0]));
   const totalCopies = entries.reduce((s, [, q]) => s + q, 0);
   const need = neededAnywhere();
   const stale = entries.filter(([n]) => !need.has(n)).map(([n]) => n);
-  $("cmStatus").innerHTML = `${entries.length} cartas · ${totalCopies} copias en total` +
-    (stale.length ? ` · <span style="color:var(--warn)">⚠️ ${stale.length} ya no hacen falta</span>` : "");
+  const onlyStale = $("cmOnlyStale").checked;
+  if (onlyStale) entries = entries.filter(([n]) => !need.has(n));
+
+  $("cmStatus").innerHTML = `${Object.keys(cardmarket).length} cartas · ${totalCopies} copias en total` +
+    (stale.length ? ` · <span style="color:var(--warn)">⚠️ ${stale.length} no faltan en ningún mazo</span>` : "");
   const wrap = $("cardmarketList");
   if (!entries.length) {
-    wrap.innerHTML = `<div class="empty"><div class="big">📋</div><div>Lista vacía. En “Mis Mazos” → pestaña Faltan, selecciona cartas y pulsa “📋 CM”.</div></div>`;
+    wrap.innerHTML = onlyStale
+      ? `<div class="empty"><div class="big">✅</div><div>Todas las cartas de la lista las necesita algún mazo.</div></div>`
+      : `<div class="empty"><div class="big">📋</div><div>Lista vacía. Añádelas desde un mazo (Faltan → 📋 CM) o aquí con el campo de arriba.</div></div>`;
     return;
   }
-  const bulk = stale.length ? `<button class="btn secondary" id="cmPurge" style="margin-bottom:12px;">🧹 Quitar las ${stale.length} que ya no hacen falta</button>` : "";
+  // Solo con el filtro activo ofrecemos el borrado en bloque (así no se lleva por
+  // delante cartas añadidas a mano que quieras aunque no estén en mazos).
+  const bulk = onlyStale && entries.length
+    ? `<button class="btn secondary" id="cmPurge" style="margin-bottom:12px;">🧹 Quitar estas ${entries.length} de la lista</button>` : "";
   wrap.innerHTML = bulk + entries.map(([name, qty]) => {
     const ok = !need.has(name);
     return `
     <div class="cm-row${ok ? " stale" : ""}" data-card="${escapeHtml(name)}">
       ${cardImgTag(name)}
-      <div class="cm-name">${escapeHtml(name)}${ok ? ` <span class="stale-badge">ya no hace falta</span>` : ""}</div>
+      <div class="cm-name">${escapeHtml(name)}${ok ? ` <span class="stale-badge">no falta en ningún mazo</span>` : ""}</div>
       <div class="cm-qty">×${qty}</div>
       <button class="cm-x" data-name="${escapeHtml(name)}" title="Quitar">×</button>
     </div>`;
   }).join("");
   wrap.querySelectorAll(".cm-x").forEach((b) => { b.onclick = () => { delete cardmarket[b.dataset.name]; saveCardmarket(); renderCardmarketList(); }; });
   const purge = $("cmPurge");
-  if (purge) purge.onclick = () => { stale.forEach((n) => delete cardmarket[n]); saveCardmarket(); renderCardmarketList(); };
+  if (purge) purge.onclick = () => {
+    if (!confirm(`¿Quitar ${entries.length} carta(s) de la lista de Cardmarket?`)) return;
+    entries.forEach(([n]) => delete cardmarket[n]);
+    saveCardmarket();
+    renderCardmarketList();
+  };
+}
+
+// Añadir una carta a mano (aunque no esté en ningún mazo). Resuelve el nombre
+// exacto vía Scryfall (fuzzy) para evitar erratas.
+async function addCardToCardmarket() {
+  const raw = $("cmAddName").value.trim();
+  const qty = Math.max(1, parseInt($("cmAddQty").value, 10) || 1);
+  if (!raw) return;
+  const btn = $("cmAddGo"); btn.disabled = true;
+  try {
+    let name = raw;
+    try {
+      const res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(raw)}`);
+      if (res.ok) name = (await res.json()).name;
+      else if (res.status === 404) { alert(`❌ No encuentro ninguna carta parecida a “${raw}”.`); return; }
+    } catch {}
+    cardmarket[name] = (cardmarket[name] || 0) + qty;
+    saveCardmarket();
+    $("cmAddName").value = ""; $("cmAddQty").value = "1";
+    renderCardmarketList();
+  } finally { btn.disabled = false; }
 }
 async function copyCardmarketAll() {
   const text = cardmarketText();
@@ -742,6 +776,9 @@ async function init() {
   };
   $("cmCopy").onclick = copyCardmarketAll;
   $("cmClear").onclick = clearCardmarket;
+  $("cmOnlyStale").onchange = renderCardmarketList;
+  $("cmAddGo").onclick = addCardToCardmarket;
+  $("cmAddName").onkeydown = (e) => { if (e.key === "Enter") addCardToCardmarket(); };
   $("pedCopy").onclick = copyPedidasAll;
   $("pedClear").onclick = clearPedidas;
   $("pedImport").onclick = () => $("pedImportBox").classList.toggle("hidden");

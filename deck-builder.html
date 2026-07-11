@@ -84,6 +84,14 @@
         <button class="btn" id="cmCopy">📋 Copiar lista entera</button>
         <button class="btn secondary" id="cmClear" style="width:auto; white-space:nowrap;">🗑️ Limpiar</button>
       </div>
+      <div class="filters">
+        <input type="search" id="cmAddName" placeholder="Añadir carta a la lista..." />
+        <input type="number" id="cmAddQty" class="mini-input" value="1" min="1" style="width:64px;" />
+        <button class="btn secondary" id="cmAddGo" style="width:auto;">➕</button>
+      </div>
+      <div class="filters">
+        <label class="toggle"><input type="checkbox" id="cmOnlyStale" /> Solo las que no faltan en ningún mazo</label>
+      </div>
       <div id="cardmarketList"></div>
     </section>
 
