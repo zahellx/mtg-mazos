@@ -353,12 +353,17 @@ function cardmarketText() {
 }
 
 // Conjunto de cartas que faltan físicamente en al menos un mazo (Archidekt vs su carpeta ManaBox).
+// Mapa cardName -> [mazos donde falta] (está en la lista de Archidekt pero no
+// en la carpeta física del mazo).
 function neededAnywhere() {
-  const need = new Set();
+  const need = new Map();
   for (const dk of decksData.decks) {
     const folder = deckFolders[dk.manaboxFolder || dk.name] || {};
     for (const c of dk.cards) {
-      if ((folder[c.name] || 0) < c.quantity) need.add(c.name);
+      if ((folder[c.name] || 0) < c.quantity) {
+        if (!need.has(c.name)) need.set(c.name, []);
+        need.get(c.name).push(dk.name);
+      }
     }
   }
   return need;
@@ -386,11 +391,15 @@ function renderCardmarketList() {
   const bulk = onlyStale && entries.length
     ? `<button class="btn secondary" id="cmPurge" style="margin-bottom:12px;">🧹 Quitar estas ${entries.length} de la lista</button>` : "";
   wrap.innerHTML = bulk + entries.map(([name, qty]) => {
-    const ok = !need.has(name);
+    const decks = need.get(name) || [];
+    const ok = !decks.length;
+    const where = ok
+      ? ` <span class="stale-badge">no falta en ningún mazo</span>`
+      : `<div class="chips">${decks.map((d) => `<span class="chip">${escapeHtml(d)}</span>`).join("")}</div>`;
     return `
     <div class="cm-row${ok ? " stale" : ""}" data-card="${escapeHtml(name)}">
       ${cardImgTag(name)}
-      <div class="cm-name">${escapeHtml(name)}${ok ? ` <span class="stale-badge">no falta en ningún mazo</span>` : ""}</div>
+      <div class="cm-name">${escapeHtml(name)}${where}</div>
       <div class="cm-qty">×${qty}</div>
       <button class="cm-x" data-name="${escapeHtml(name)}" title="Quitar">×</button>
     </div>`;
