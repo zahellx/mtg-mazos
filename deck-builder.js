@@ -590,11 +590,18 @@ async function saveConfig() {
   const c = syncCfg();
   const btn = $("cfgSave"); btn.disabled = true; const lbl = btn.textContent; btn.textContent = "Guardando…";
   try {
+    // Se conservan también los mazos SIN Archidekt ID (pendientes): quedan en la
+    // config y el generador simplemente los ignora hasta que tengan ID.
     const clean = {
       decks: deckCfg.decks
-        .filter((d) => String(d.archideck_id || "").trim())
-        .map((d) => ({ name: (d.name || "").trim() || `Deck ${d.archideck_id}`, archideck_id: parseInt(d.archideck_id, 10), manaboxFolder: (d.manaboxFolder || "").trim() || undefined })),
+        .filter((d) => (d.name || "").trim() || String(d.archideck_id || "").trim() || (d.manaboxFolder || "").trim())
+        .map((d) => ({
+          name: (d.name || "").trim() || (String(d.archideck_id || "").trim() ? `Deck ${d.archideck_id}` : "(sin nombre)"),
+          archideck_id: parseInt(d.archideck_id, 10) || null,
+          manaboxFolder: (d.manaboxFolder || "").trim() || undefined,
+        })),
     };
+    const pending = clean.decks.filter((d) => !d.archideck_id).length;
     const api = `https://api.github.com/repos/${c.owner}/${c.repo}/contents/decks-config.json`;
     const body = { message: "update decks config", content: b64e(JSON.stringify(clean, null, 2)), branch: c.branch || "main" };
     if (deckCfgSha) body.sha = deckCfgSha;
@@ -611,7 +618,7 @@ async function saveConfig() {
       dispatched = wf.status === 204;
     } catch { /* sin permiso Actions */ }
 
-    alert(`💾 Config guardada (${clean.decks.length} mazos).\n` +
+    alert(`💾 Config guardada (${clean.decks.length} mazos${pending ? `, ${pending} pendiente(s) sin Archidekt ID` : ""}).\n` +
       (dispatched ? "🔄 Regenerando las listas de mazos… en 1-2 min estarán listas (recarga)." : "Se aplicará en el próximo refresco (o pulsa Run workflow en GitHub). Para que se lance sola, el token necesita permiso 'Actions: write' sobre el repo público."));
   } catch (e) {
     alert("❌ " + e.message);
