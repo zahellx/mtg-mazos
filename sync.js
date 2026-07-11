@@ -94,6 +94,7 @@
     const cfg = getCfg();
     if (!cfg.token || syncing) return;
     syncing = true;
+    busyStart("Sincronizando…");
     try {
       detectLocalChanges();
       const remote = await getRemote(cfg);
@@ -125,7 +126,33 @@
         setTimeout(() => location.reload(), 900);
       }
     } catch (_) { /* sin red o token: silencioso */ }
-    finally { syncing = false; }
+    finally { syncing = false; busyEnd(); }
+  }
+
+  // ── Indicador de sync en curso (arriba a la derecha) ──────────────────────────
+  let busyEl = null, busyCount = 0;
+  function ensureBusyEl() {
+    if (busyEl) return;
+    const style = document.createElement("style");
+    style.textContent = "@keyframes mtgspin{from{transform:rotate(0)}to{transform:rotate(360deg)}}";
+    document.head.appendChild(style);
+    busyEl = document.createElement("div");
+    busyEl.id = "mtg-sync-busy";
+    busyEl.style.cssText = `position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:1002;
+      display:none;align-items:center;gap:6px;background:#20242d;border:1px solid #2a2f3a;color:#9aa1ad;
+      border-radius:999px;padding:4px 10px;font:600 11.5px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.35)`;
+    busyEl.innerHTML = `<span style="display:inline-block;animation:mtgspin 1s linear infinite">🔄</span><span id="mtg-busy-label"></span>`;
+    document.body.appendChild(busyEl);
+  }
+  function busyStart(label) {
+    ensureBusyEl();
+    busyCount++;
+    busyEl.querySelector("#mtg-busy-label").textContent = label || "Sincronizando…";
+    busyEl.style.display = "flex";
+  }
+  function busyEnd() {
+    busyCount = Math.max(0, busyCount - 1);
+    if (!busyCount && busyEl) busyEl.style.display = "none";
   }
 
   // ── UI: botón flotante + modal (config y override manual) ─────────────────────
@@ -256,6 +283,7 @@
       if (res.status !== 204) return; // sin permiso Actions: se queda con el cron diario
       localStorage.setItem(DISPATCH_STAMP, String(Date.now()));
       // Vigilar ~7 min por si publica una versión nueva (solo publica si hubo cambios).
+      busyStart("Comprobando Archidekt…");
       let tries = 0;
       const iv = setInterval(async () => {
         tries++;
@@ -263,11 +291,13 @@
           const g = await decksGeneratedAt();
           if (g > gen) {
             clearInterval(iv);
+            busyEnd();
             toast("🃏 Mazos actualizados desde Archidekt");
             setTimeout(() => location.reload(), 900);
+            return;
           }
         } catch {}
-        if (tries >= 14) clearInterval(iv);
+        if (tries >= 14) { clearInterval(iv); busyEnd(); }
       }, 30000);
     } catch { /* silencioso */ }
   }
