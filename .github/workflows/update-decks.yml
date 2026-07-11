@@ -30,6 +30,8 @@ jobs:
           node-version: "22"
 
       - name: Descargar mazos de Archidekt
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}   # para leer decks-config.json del repo privado
         run: node fetch-decks.js
 
       - name: Configurar Pages
