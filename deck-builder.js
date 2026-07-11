@@ -139,6 +139,8 @@ async function fetchPricesFor(names) {
   }
 }
 
+let lastVendiblesList = []; // lista visible actual (para el botón Copiar)
+
 function renderVendibles() {
   if (!hasCollection()) { $("vendiblesStatus").textContent = "Importa tu colección primero."; $("vendiblesList").innerHTML = ""; return; }
   const list0 = sellableCards();
@@ -152,6 +154,7 @@ function renderVendibles() {
   if (minPrice > 0) list = list.filter((c) => c.price >= minPrice);
   if (minCopies > 0) list = list.filter((c) => c.extra >= minCopies);
   if (onlySel) list = list.filter((c) => sellMarks[c.name]);
+  lastVendiblesList = list;
 
   const hasPrices = list0.some((c) => c.price > 0);
   const marked = list0.filter((c) => sellMarks[c.name]);
@@ -644,6 +647,12 @@ async function init() {
   $("vendMinPrice").oninput = renderVendibles;
   $("vendMinCopies").oninput = renderVendibles;
   $("vendOnlySel").onchange = renderVendibles;
+  $("vendCopy").onclick = async () => {
+    if (!lastVendiblesList.length) { alert("No hay cartas que copiar con los filtros actuales."); return; }
+    const text = lastVendiblesList.map((c) => `${c.extra} ${c.name}`).join("\n");
+    try { await navigator.clipboard.writeText(text); alert(`📋 Copiadas ${lastVendiblesList.length} cartas vendibles (con sus copias sobrantes).`); }
+    catch { prompt("Copia esta lista:", text); }
+  };
   $("cmCopy").onclick = copyCardmarketAll;
   $("cmClear").onclick = clearCardmarket;
   $("pedCopy").onclick = copyPedidasAll;
