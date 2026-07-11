@@ -34,10 +34,27 @@ jobs:
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}   # para leer decks-config.json del repo privado
         run: node fetch-decks.js
 
+      # En cron/dispatch, solo desplegamos si los mazos realmente cambiaron en
+      # Archidekt (comparando con lo ya publicado, ignorando generatedAt).
+      # En push siempre se despliega (puede haber cambios de código).
+      - name: Comprobar si hay cambios en los mazos
+        id: diff
+        run: |
+          curl -s "https://zahellx.github.io/${GITHUB_REPOSITORY#*/}/data/decks-data.json" -o /tmp/live.json || echo '{}' > /tmp/live.json
+          node -e "
+            const fs = require('fs');
+            const strip = (p) => { try { const o = JSON.parse(fs.readFileSync(p, 'utf8')); delete o.generatedAt; return JSON.stringify(o); } catch { return ''; } };
+            const changed = strip('data/decks-data.json') !== strip('/tmp/live.json');
+            console.log('changed =', changed);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'changed=' + changed + '\n');
+          "
+
       - name: Configurar Pages
+        if: github.event_name == 'push' || steps.diff.outputs.changed == 'true'
         uses: actions/configure-pages@v5
 
       - name: Subir artefacto
+        if: github.event_name == 'push' || steps.diff.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: "."
@@ -46,6 +63,7 @@ jobs:
       # try again later"). Reintentamos hasta 3 veces en la misma ejecución.
       - name: Desplegar (intento 1)
         id: deploy1
+        if: github.event_name == 'push' || steps.diff.outputs.changed == 'true'
         continue-on-error: true
         uses: actions/deploy-pages@v4
 

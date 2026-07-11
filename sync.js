@@ -223,11 +223,61 @@
     afterImport: () => { if (changeTimer) clearTimeout(changeTimer); changeTimer = setTimeout(() => { changeTimer = null; syncNow(); }, 800); },
   };
 
+  // ── Refresco de mazos desde Archidekt al entrar ────────────────────────────────
+  // El navegador no puede consultar Archidekt (CORS), así que: si los datos
+  // publicados tienen más de 30 min, lanzamos el workflow (con el token) para que
+  // compruebe Archidekt; si hubo cambios, publica y aquí recargamos al detectarlo.
+  const DECKS_URL = "data/decks-data.json";
+  const DISPATCH_STAMP = "mtg-decks-dispatch-ts";
+  const DECKS_STALE_MS = 30 * 60 * 1000;
+
+  async function decksGeneratedAt() {
+    const r = await fetch(`${DECKS_URL}?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw new Error("no decks-data");
+    return Date.parse((await r.json()).generatedAt) || 0;
+  }
+
+  async function deckRefreshCheck() {
+    const cfg = getCfg();
+    if (!cfg.token) return;
+    let gen = 0;
+    try { gen = await decksGeneratedAt(); } catch { return; }
+    if (Date.now() - gen < DECKS_STALE_MS) return; // datos recientes
+    const last = Number(localStorage.getItem(DISPATCH_STAMP) || 0);
+    if (Date.now() - last < DECKS_STALE_MS) return; // ya lo pedimos hace poco
+    const owner = location.hostname.split(".")[0];
+    const repo = location.pathname.split("/").filter(Boolean)[0] || "mtg-mazos";
+    try {
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/update-decks.yml/dispatches`, {
+        method: "POST",
+        headers: { ...headers(cfg), "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: "main" }),
+      });
+      if (res.status !== 204) return; // sin permiso Actions: se queda con el cron diario
+      localStorage.setItem(DISPATCH_STAMP, String(Date.now()));
+      // Vigilar ~7 min por si publica una versión nueva (solo publica si hubo cambios).
+      let tries = 0;
+      const iv = setInterval(async () => {
+        tries++;
+        try {
+          const g = await decksGeneratedAt();
+          if (g > gen) {
+            clearInterval(iv);
+            toast("🃏 Mazos actualizados desde Archidekt");
+            setTimeout(() => location.reload(), 900);
+          }
+        } catch {}
+        if (tries >= 14) clearInterval(iv);
+      }, 30000);
+    } catch { /* silencioso */ }
+  }
+
   function start() {
     addButton();
     syncNow();
+    deckRefreshCheck();
     setInterval(() => { if (!document.hidden) syncNow(); }, 60000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) syncNow(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { syncNow(); deckRefreshCheck(); } });
     window.addEventListener("focus", syncNow);
   }
   window.addEventListener("load", start);
