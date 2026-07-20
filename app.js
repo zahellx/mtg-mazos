@@ -788,7 +788,7 @@ function renderPrices() {
   wrap.innerHTML = list.map((r) => {
     const cls = r.pct >= 0 ? "up" : "down";
     const sign = r.pct >= 0 ? "+" : "";
-    return `<div class="price-row">
+    return `<div class="price-row" data-card="${escapeHtml(r.name)}">
       <img loading="lazy" src="https://api.scryfall.com/cards/${encodeURIComponent(r.scryfallId)}?format=image&version=small" alt="${escapeHtml(r.name)}" onerror="this.style.visibility='hidden'" />
       <div class="p-info">
         <div class="p-name">${escapeHtml(r.name)}${r.foil ? " ✨" : ""}</div>
@@ -800,6 +800,7 @@ function renderPrices() {
       </div>
     </div>`;
   }).join("");
+  wrap.querySelectorAll(".price-row").forEach((row) => { row.onclick = () => openCardModal(row.dataset.card); });
 }
 
 // Consume el CSV recibido vía "Compartir" de Android (Share Target).
@@ -887,6 +888,13 @@ async function init() {
   $("basicsToggle").onchange = () => renderDeckTab();
   $("selectAllBtn").onclick = toggleSelectAll;
   $("cancelSelection").onclick = clearSelection;
+  $("copyNames").onclick = async () => {
+    const names = lastMissingList.filter((c) => selected.has(c.name)).map((c) => c.name);
+    if (!names.length) return;
+    const text = names.join("\n");
+    try { await navigator.clipboard.writeText(text); alert(`📄 ${names.length} nombre(s) copiados.`); }
+    catch { prompt("Copia los nombres:", text); }
+  };
   $("addCardmarket").onclick = addSelectedToCardmarket;
   $("markOrdered").onclick = markSelectedOrdered;
   $("markProxy").onclick = markSelectedProxy;
