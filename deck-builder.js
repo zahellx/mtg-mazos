@@ -7,6 +7,7 @@ const COLLECTION_DATA_KEY = "mtg-collection-data-v1";
 const CARDMARKET_KEY = "mtg-cardmarket-v1";
 const ORDERS_KEY = "mtg-orders-v1";
 const SELL_KEY = "mtg-sell-v1";
+const PROXIES_KEY = "mtg-proxies-v1";
 
 let decksData = null;
 let collection = {};      // {name: totalQty}
@@ -15,6 +16,8 @@ let pool = {};            // {name: qty} en binders no-deck
 let cardmarket = {};      // {name: qty} lista de compra
 let orders = {};          // {name: qty|true} pedidas
 let sellMarks = {};       // {name: true} marcadas "para vender"
+let proxies = {};         // {deckName: {cardName: true}} proxies por mazo
+let binders = {};         // {binderName: {cardName: qty}} carpetas no-mazo
 let priceByName = {};     // cache de precios EUR por nombre (para vendibles)
 
 const $ = (id) => document.getElementById(id);
@@ -32,11 +35,12 @@ let printingsByName = {};
 function loadCollection() {
   try { collection = JSON.parse(localStorage.getItem(COLLECTION_KEY)) || {}; } catch { collection = {}; }
   let prints = [];
-  try { const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {}; deckFolders = d.deckFolders || {}; pool = d.pool || {}; prints = d.printings || []; }
-  catch { deckFolders = {}; pool = {}; }
+  try { const d = JSON.parse(localStorage.getItem(COLLECTION_DATA_KEY)) || {}; deckFolders = d.deckFolders || {}; binders = d.binders || {}; pool = d.pool || {}; prints = d.printings || []; }
+  catch { deckFolders = {}; binders = {}; pool = {}; }
   try { cardmarket = JSON.parse(localStorage.getItem(CARDMARKET_KEY)) || {}; } catch { cardmarket = {}; }
   try { orders = JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { orders = {}; }
   try { sellMarks = JSON.parse(localStorage.getItem(SELL_KEY)) || {}; } catch { sellMarks = {}; }
+  try { proxies = JSON.parse(localStorage.getItem(PROXIES_KEY)) || {}; } catch { proxies = {}; }
   // Índice nombre -> printings que tienes (para foto de tu copia y "Versiones").
   printingsByName = {};
   for (const p of prints) {
@@ -195,6 +199,60 @@ function renderVendibles() {
       renderVendibles();
     };
   });
+}
+
+// ── Proxies: dónde tienes proxies y dónde está la carta real ────────────────────
+function proxyRows() {
+  // carpeta física -> nombre(s) de mazo(s) que la usan (para etiquetar bonito)
+  const folderToDecks = {};
+  decksData.decks.forEach((dk) => {
+    const f = dk.manaboxFolder || dk.name;
+    (folderToDecks[f] = folderToDecks[f] || []).push(dk.name);
+  });
+  const rows = [];
+  for (const [deckName, cards] of Object.entries(proxies)) {
+    for (const card of Object.keys(cards)) {
+      // ¿Dónde está la carta REAL físicamente?
+      const inDecks = [];
+      for (const [folder, fc] of Object.entries(deckFolders)) {
+        const q = fc[card] || 0;
+        if (q > 0) inDecks.push({ name: (folderToDecks[folder] || [folder]).join(" / "), qty: q });
+      }
+      const inBinders = [];
+      for (const [bn, bc] of Object.entries(binders)) {
+        const q = bc[card] || 0;
+        if (q > 0) inBinders.push({ name: bn, qty: q });
+      }
+      rows.push({ card, deckName, inDecks, inBinders, ownedNone: !inDecks.length && !inBinders.length });
+    }
+  }
+  rows.sort((a, b) => a.card.localeCompare(b.card) || a.deckName.localeCompare(b.deckName));
+  return rows;
+}
+
+function renderProxies() {
+  const all = proxyRows();
+  const filter = norm($("prxSearch").value);
+  const rows = filter ? all.filter((r) => norm(r.card).includes(filter) || norm(r.deckName).includes(filter)) : all;
+  const noOriginal = all.filter((r) => r.ownedNone).length;
+  $("prxStatus").innerHTML = `${all.length} proxy(s) en tus mazos` +
+    (noOriginal ? ` · <span style="color:var(--bad)">${noOriginal} sin carta original en tu colección</span>` : "");
+  const wrap = $("proxiesList");
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="empty"><div class="big">🎭</div><div>${all.length ? "Nada que mostrar con ese filtro." : "No tienes proxies marcadas. Se marcan desde un mazo → Faltan → seleccionar → 🎭 Proxy."}</div></div>`;
+    return;
+  }
+  const chips = (arr, icon) => arr.map((o) => `<span class="chip">${icon} ${escapeHtml(o.name)}${o.qty > 1 ? " ×" + o.qty : ""}</span>`).join("");
+  wrap.innerHTML = rows.map((r) => `
+    <div class="conflict" data-card="${escapeHtml(r.card)}">
+      ${cardImgTag(r.card)}
+      <div class="c-info">
+        <div class="c-name">${escapeHtml(r.card)} <span class="prx-badge">🎭 proxy en ${escapeHtml(r.deckName)}</span></div>
+        ${r.ownedNone
+          ? `<div class="c-counts"><span class="loc bad">🛒 No tienes la carta original</span></div>`
+          : `<div class="c-counts"><span class="loc">Original en:</span></div><div class="chips">${chips(r.inDecks, "🗂️")}${chips(r.inBinders, "📦")}</div>`}
+      </div>
+    </div>`).join("");
 }
 
 // ── Toda la colección por precio (marca "para vender" compartida con Vendibles) ──
@@ -677,10 +735,11 @@ const REPORTS = [
   { id: "pedidas", icon: "🛒", name: "Pedidas", desc: "Cartas que ya has encargado" },
   { id: "vendibles", icon: "💰", name: "Cartas vendibles", desc: "Copias que te sobran (no las usa ningún mazo)" },
   { id: "coleccion", icon: "🗃️", name: "Toda la colección", desc: "Todas tus cartas por precio; marca para vender" },
+  { id: "proxies", icon: "🎭", name: "Proxies", desc: "Dónde tienes proxies y dónde está la carta real" },
   { id: "conflictos", icon: "⚠️", name: "Conflictos de copias", desc: "Cartas que piden varios mazos y no te llegan" },
   { id: "info", icon: "📄", name: "Info / oracle de mazo", desc: "Cada mazo carta a carta, con reglas" },
 ];
-const VIEWS = { home: "dbHome", config: "configView", cardmarket: "cardmarketView", pedidas: "pedidasView", vendibles: "vendiblesView", coleccion: "coleccionView", conflictos: "conflictosView", info: "infoView" };
+const VIEWS = { home: "dbHome", config: "configView", cardmarket: "cardmarketView", pedidas: "pedidasView", vendibles: "vendiblesView", coleccion: "coleccionView", proxies: "proxiesView", conflictos: "conflictosView", info: "infoView" };
 
 function showView(v) {
   Object.values(VIEWS).forEach((id) => $(id).classList.add("hidden"));
@@ -700,6 +759,7 @@ function openReport(id) {
   if (id === "pedidas") renderPedidasList();
   if (id === "vendibles") renderVendibles();
   if (id === "coleccion") { colShown = 300; renderColeccion(); }
+  if (id === "proxies") renderProxies();
   if (id === "conflictos") renderConflictos();
   if (id === "info") renderInfo();
 }
@@ -792,6 +852,7 @@ async function init() {
   $("pedClear").onclick = clearPedidas;
   $("pedImport").onclick = () => $("pedImportBox").classList.toggle("hidden");
   $("pedImportGo").onclick = importOrdersFromText;
+  $("prxSearch").oninput = renderProxies;
   $("conflictosSearch").oninput = renderConflictos;
   $("conflictosBasics").onchange = renderConflictos;
   $("infoDeckSelect").onchange = renderInfo;
