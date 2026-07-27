@@ -250,7 +250,7 @@ function deckCounts(deck) {
   if (Object.keys(myFolderOf(deck)).length === 0) return null;
   let inDecks = 0, inBinders = 0, buy = 0;
   for (const c of missingForDeck(deck, false)) {
-    if (isProxy(deck.name, c.name)) continue;
+    // El proxy es solo una etiqueta de organización: no descuenta de ningún contador.
     if (c.category === "deck") inDecks++;
     else if (c.category === "binder") inBinders++;
     else buy++;
@@ -319,7 +319,7 @@ let lastMissingList = []; // faltantes visibles actuales (para Cardmarket / pedi
 function matchFilter(key, c, dn) {
   if (key === "deck") return c.category === "deck";
   if (key === "binder") return c.binderLocs.length > 0; // en alguna carpeta, aunque también esté en otro mazo
-  if (key === "buy") return c.category === "buy" && !isProxy(dn, c.name);
+  if (key === "buy") return c.category === "buy"; // proxy es solo una etiqueta: no excluye de comprar
   if (key === "nospare") return c.deckLocs.length > 0 && c.binderLocs.length === 0; // en otro mazo y sin suelta
   if (key === "proxy") return isProxy(dn, c.name);
   if (key === "pedida") return orders[c.name] != null;
@@ -404,7 +404,7 @@ function renderConflicts() {
       <span class="sel-check">✓</span>
       ${cardImgTag(c.name)}
       <div class="c-info">
-        <div class="c-name">${proxy ? "🎭" : icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
+        <div class="c-name">${icon} ${escapeHtml(c.name)}${c.needed > 1 ? ` ×${c.needed}` : ""}${badges}${c.type ? ` <span class="meta">· ${escapeHtml(c.type)}</span>` : ""}</div>
         ${locHtml}
       </div>
     </div>`;
