@@ -649,6 +649,7 @@ function openDeck(deck, tab = "missing") {
   activeFilters.clear();
   window.scrollTo(0, 0);
   saveNav({ view: "deck", deck: deck.name, tab: currentTab });
+  try { history.pushState({ v: "deck" }, ""); } catch (_) {}
   renderDeckTab();
 }
 
@@ -661,6 +662,7 @@ function openPrices() {
   $("title").textContent = "Movimientos de precio";
   window.scrollTo(0, 0);
   saveNav({ view: "price" });
+  try { history.pushState({ v: "price" }, ""); } catch (_) {}
   renderPrices();
 }
 
@@ -882,7 +884,12 @@ async function init() {
 
   configureCardModal();
 
-  $("backBtn").onclick = goHome;
+  // "Atrás" del navegador/móvil: cierra el modal si está abierto; si no, vuelve a la portada.
+  $("backBtn").onclick = () => history.back();
+  window.addEventListener("popstate", () => {
+    if (window.cardModal && window.cardModal.consumePop()) return;
+    if (currentDeck || !$("priceView").classList.contains("hidden")) goHome();
+  });
   $("deckSearch").oninput = (e) => renderDecks(e.target.value);
   $("cardSearch").oninput = () => renderDeckTab();
   $("basicsToggle").onchange = () => renderDeckTab();

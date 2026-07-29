@@ -753,6 +753,7 @@ function openReport(id) {
   const r = REPORTS.find((x) => x.id === id);
   $("title").textContent = r ? `${r.icon} ${r.name}` : "Deck Builder";
   try { sessionStorage.setItem(DB_NAV_KEY, id); } catch (_) {}
+  try { history.pushState({ v: id }, ""); } catch (_) {}
   showView(id);
   if (id === "config") renderConfig();
   if (id === "cardmarket") renderCardmarketList();
@@ -805,7 +806,12 @@ async function init() {
     rd.readAsText(f); e.target.value = "";
   };
 
-  $("backBtn").onclick = goHome;
+  // "Atrás": cierra el modal si está abierto; si no, vuelve al menú de reportes.
+  $("backBtn").onclick = () => history.back();
+  window.addEventListener("popstate", () => {
+    if (window.cardModal && window.cardModal.consumePop()) return;
+    if ($("dbHome").classList.contains("hidden")) goHome();
+  });
   $("vendiblesSearch").oninput = renderVendibles;
   $("vendiblesPrices").onclick = async () => {
     const btn = $("vendiblesPrices"); btn.disabled = true; const lbl = btn.textContent;

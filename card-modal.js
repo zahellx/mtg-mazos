@@ -11,11 +11,18 @@
   let current = null;
   let ctx = { printings: () => [], actions: () => [], onChange: null };
 
-  function close() { current = null; const m = $("cardModal"); if (m) m.classList.add("hidden"); }
+  let histPushed = false; // hay una entrada de historial propia del modal
+
+  function hide() { current = null; const m = $("cardModal"); if (m) m.classList.add("hidden"); }
+  // Cerrar con ✕/fondo/Esc: deshace la entrada de historial (popstate hará el hide).
+  function close() { if (histPushed) history.back(); else hide(); }
+  // Llamado por la página en su popstate: si el modal estaba abierto, lo cierra y consume el "atrás".
+  function consumePop() { if (histPushed) { histPushed = false; hide(); return true; } return false; }
 
   async function open(name) {
     current = name;
     $("cardModal").classList.remove("hidden");
+    if (!histPushed) { try { history.pushState({ mtgModal: 1 }, ""); histPushed = true; } catch (_) {} }
     $("modalBody").innerHTML = `<div class="empty"><div class="big">⏳</div><div>Cargando ${esc(name)}…</div></div>`;
     const prints = ctx.printings(name) || [];
     const sid = prints[0]?.scryfallId || null; // la foto de TU copia
@@ -94,5 +101,5 @@
   if (document.readyState !== "loading") bind();
   else document.addEventListener("DOMContentLoaded", bind);
 
-  window.cardModal = { configure: (c) => { ctx = { ...ctx, ...c }; }, open, close };
+  window.cardModal = { configure: (c) => { ctx = { ...ctx, ...c }; }, open, close, consumePop };
 })();
