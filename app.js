@@ -619,9 +619,16 @@ function renderChanges() {
       </div>
       <div class="qbadge ${kind === "add" ? "add" : "rem"}">${kind === "add" ? "+" : "−"}${c.qty}</div>
     </div>`;
+  // Copias totales (no líneas) y aviso de básicas ocultas por el toggle.
+  const sumQty = (arr) => arr.reduce((s, c) => s + c.qty, 0);
+  const hiddenNote = (arr) => {
+    if (showBasics) return "";
+    const basics = arr.filter((c) => c.basic && (!filter || norm(c.name).includes(filter)));
+    return basics.length ? ` <span class="meta">+${sumQty(basics)} básicas ocultas</span>` : "";
+  };
   wrap.innerHTML =
-    (add.length ? `<div class="change-section"><h3>➕ Meter en el mazo (${add.length})</h3>${add.map((c) => row(c, "add")).join("")}</div>` : "") +
-    (rem.length ? `<div class="change-section"><h3>➖ Sacar del mazo (${rem.length})</h3>${rem.map((c) => row(c, "rem")).join("")}</div>` : "");
+    (add.length || hiddenNote(toAdd) ? `<div class="change-section"><h3>➕ Meter en el mazo (${sumQty(add)} copias)${hiddenNote(toAdd)}</h3>${add.map((c) => row(c, "add")).join("")}</div>` : "") +
+    (rem.length || hiddenNote(toRemove) ? `<div class="change-section"><h3>➖ Sacar del mazo (${sumQty(rem)} copias)${hiddenNote(toRemove)}</h3>${rem.map((c) => row(c, "rem")).join("")}</div>` : "");
   if (window.mtgImg) window.mtgImg.load(wrap);
   wrap.querySelectorAll(".change-row").forEach((r) => { r.onclick = () => openCardModal(r.dataset.card); });
 }
