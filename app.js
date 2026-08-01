@@ -297,12 +297,16 @@ function renderDecks(filter = "") {
     let badge;
     if (cnt == null) badge = `<div class="badge">–</div>`;
     else if (!cnt.missing) badge = `<div class="badge zero" title="Completo con cartas reales">✓</div>`;
-    else if (cnt.proxied === cnt.missing) badge = `<div class="badge proxyok" title="Jugable ya: lo que falta está cubierto con proxies">🎭✓</div>`;
-    else badge = `<div class="badge-pair">
+    else {
+      // Jugable con proxies: la marca se AÑADE a los contadores, no los sustituye.
+      const proxyOk = cnt.proxied === cnt.missing
+        ? `<span class="bp proxyok" title="Jugable ya: lo que falta está cubierto con proxies">🎭✓</span>` : "";
+      badge = `<div class="badge-pair">${proxyOk}
         <span class="bp avail" title="Faltan: están en otro mazo">🗂️ ${cnt.inDecks}</span>
         <span class="bp binder" title="Faltan: están en otra carpeta (no mazo)">📦 ${cnt.inBinders}</span>
         <span class="bp buy" title="No las tienes: por comprar">🛒 ${cnt.buy}</span>
       </div>`;
+    }
     const el = document.createElement("div");
     el.className = "deck-card";
     el.innerHTML = `
