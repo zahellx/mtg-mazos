@@ -248,16 +248,17 @@ function deckMissingCount(deck) {
 // Los proxies no cuentan (están resueltos). null si no hay carpeta física.
 function deckCounts(deck) {
   if (Object.keys(myFolderOf(deck)).length === 0) return null;
-  let inDecks = 0, inBinders = 0, buy = 0, missing = 0, proxied = 0;
+  let inDecks = 0, inBinders = 0, buy = 0, missing = 0, proxied = 0, ordered = 0;
   for (const c of missingForDeck(deck, false)) {
     missing++;
     if (isProxy(deck.name, c.name)) proxied++;
+    if (orders[c.name] != null) ordered++;
     // El proxy es solo una etiqueta de organización: no descuenta de ningún contador.
     if (c.category === "deck") inDecks++;
     else if (c.category === "binder") inBinders++;
     else buy++;
   }
-  return { inDecks, inBinders, buy, missing, proxied };
+  return { inDecks, inBinders, buy, missing, proxied, ordered };
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -301,7 +302,9 @@ function renderDecks(filter = "") {
       // Jugable con proxies: la marca se AÑADE a los contadores, no los sustituye.
       const proxyOk = cnt.proxied === cnt.missing
         ? `<span class="bp proxyok" title="Jugable ya: lo que falta está cubierto con proxies">🎭✓</span>` : "";
-      badge = `<div class="badge-pair">${proxyOk}
+      const orderedPill = cnt.ordered
+        ? `<span class="bp ordered" title="Pedidas: en camino">🚚 ${cnt.ordered}</span>` : "";
+      badge = `<div class="badge-pair">${proxyOk}${orderedPill}
         <span class="bp avail" title="Faltan: están en otro mazo">🗂️ ${cnt.inDecks}</span>
         <span class="bp binder" title="Faltan: están en otra carpeta (no mazo)">📦 ${cnt.inBinders}</span>
         <span class="bp buy" title="No las tienes: por comprar">🛒 ${cnt.buy}</span>
