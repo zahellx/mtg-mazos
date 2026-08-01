@@ -248,14 +248,16 @@ function deckMissingCount(deck) {
 // Los proxies no cuentan (están resueltos). null si no hay carpeta física.
 function deckCounts(deck) {
   if (Object.keys(myFolderOf(deck)).length === 0) return null;
-  let inDecks = 0, inBinders = 0, buy = 0;
+  let inDecks = 0, inBinders = 0, buy = 0, missing = 0, proxied = 0;
   for (const c of missingForDeck(deck, false)) {
+    missing++;
+    if (isProxy(deck.name, c.name)) proxied++;
     // El proxy es solo una etiqueta de organización: no descuenta de ningún contador.
     if (c.category === "deck") inDecks++;
     else if (c.category === "binder") inBinders++;
     else buy++;
   }
-  return { inDecks, inBinders, buy };
+  return { inDecks, inBinders, buy, missing, proxied };
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -294,7 +296,8 @@ function renderDecks(filter = "") {
     const cnt = hasCollection() ? deckCounts(deck) : null; // null = sin carpeta física
     let badge;
     if (cnt == null) badge = `<div class="badge">–</div>`;
-    else if (!cnt.inDecks && !cnt.inBinders && !cnt.buy) badge = `<div class="badge zero">✓</div>`;
+    else if (!cnt.missing) badge = `<div class="badge zero" title="Completo con cartas reales">✓</div>`;
+    else if (cnt.proxied === cnt.missing) badge = `<div class="badge proxyok" title="Jugable ya: lo que falta está cubierto con proxies">🎭✓</div>`;
     else badge = `<div class="badge-pair">
         <span class="bp avail" title="Faltan: están en otro mazo">🗂️ ${cnt.inDecks}</span>
         <span class="bp binder" title="Faltan: están en otra carpeta (no mazo)">📦 ${cnt.inBinders}</span>

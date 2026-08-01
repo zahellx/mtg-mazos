@@ -67,6 +67,7 @@ main { padding: 14px 16px 40px; max-width: 820px; margin: 0 auto; }
   padding: 6px 9px; font-weight: 700; font-size: 15px;
 }
 .badge.zero { background: #16291f; color: var(--ok); }
+.badge.proxyok { background: #2a1f3d; color: #d8b4fe; border: 1px solid #9b6cff; }
 .badge.some { background: #3a2a14; color: var(--warn); }
 .badge-pair { flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
 .badge-pair .bp { text-align: center; border-radius: 8px; padding: 3px 8px; font-weight: 700; font-size: 12.5px; white-space: nowrap; }
