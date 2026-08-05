@@ -583,6 +583,69 @@ function markSelectedProxy() {
   alert(allProxy ? `🎭 Quitado el proxy de ${names.length} carta(s).` : `🎭 ${names.length} carta(s) marcadas como proxy en “${dn}”.`);
 }
 
+// ── Compartir las fotos de las cartas seleccionadas (WhatsApp) ─────────────────
+async function fetchCardFile(name, i) {
+  const sid = ownedSid(name);
+  const url = sid
+    ? `https://api.scryfall.com/cards/${encodeURIComponent(sid)}?format=image&version=normal`
+    : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=normal`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(name);
+  const blob = await res.blob();
+  const safe = name.replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+  return new File([blob], `${String(i + 1).padStart(2, "0")}-${safe}.jpg`, { type: blob.type || "image/jpeg" });
+}
+
+async function shareSelectedPhotos() {
+  let names = [...selected];
+  if (!names.length) return;
+  if (names.length > 30) { alert("Máximo 30 fotos por envío (límite de WhatsApp): uso las 30 primeras."); names = names.slice(0, 30); }
+  const btn = $("sharePhotos"); btn.disabled = true; const lbl = btn.textContent;
+  try {
+    // Descarga en tandas de 6 (imágenes en tamaño normal, con TU printing si lo tienes).
+    const files = [];
+    for (let i = 0; i < names.length; i += 6) {
+      const chunk = await Promise.all(names.slice(i, i + 6).map((n, j) => fetchCardFile(n, i + j).catch(() => null)));
+      files.push(...chunk.filter(Boolean));
+      btn.textContent = `${Math.min(i + 6, names.length)}/${names.length}`;
+    }
+    if (!files.length) { alert("❌ No pude descargar las imágenes."); return; }
+
+    // Android: compartir las fotos sueltas (elige WhatsApp en el menú).
+    if (navigator.canShare && navigator.canShare({ files })) {
+      try { await navigator.share({ files }); } catch (e) { if (e.name !== "AbortError") throw e; }
+      return;
+    }
+
+    // PC: collage en una sola imagen -> portapapeles (pégala en WhatsApp Web).
+    const bitmaps = await Promise.all(files.map((f) => createImageBitmap(f)));
+    const cols = Math.ceil(Math.sqrt(bitmaps.length));
+    const rows = Math.ceil(bitmaps.length / cols);
+    const W = 300, H = 419, GAP = 10;
+    const canvas = document.createElement("canvas");
+    canvas.width = cols * W + (cols + 1) * GAP;
+    canvas.height = rows * H + (rows + 1) * GAP;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#0f1115";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    bitmaps.forEach((bm, i) => {
+      const c = i % cols, r = Math.floor(i / cols);
+      ctx.drawImage(bm, GAP + c * (W + GAP), GAP + r * (H + GAP), W, H);
+    });
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      alert(`📸 Collage de ${files.length} cartas copiado. Pégalo en WhatsApp con Ctrl+V.`);
+    } catch {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "cartas.png";
+      a.click();
+      alert("📸 No pude copiar al portapapeles: te lo descargo como cartas.png.");
+    }
+  } finally { btn.disabled = false; btn.textContent = lbl; }
+}
+
 function toggleSelectAll() {
   const visible = lastMissingList.map((c) => c.name);
   const allSel = visible.length && visible.every((n) => selected.has(n));
@@ -919,6 +982,7 @@ async function init() {
     try { await navigator.clipboard.writeText(text); alert(`📄 ${names.length} nombre(s) copiados.`); }
     catch { prompt("Copia los nombres:", text); }
   };
+  $("sharePhotos").onclick = shareSelectedPhotos;
   $("addCardmarket").onclick = addSelectedToCardmarket;
   $("markOrdered").onclick = markSelectedOrdered;
   $("markProxy").onclick = markSelectedProxy;
