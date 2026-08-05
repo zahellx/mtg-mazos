@@ -445,15 +445,18 @@ function renderConflicts() {
   // Tap = abrir carta; mantener pulsado = seleccionar (y entrar en modo selección).
   wrap.querySelectorAll(".conflict").forEach((row) => {
     const name = row.dataset.card;
-    let timer = null, longPressed = false;
+    let timer = null, longPressed = false, sx = 0, sy = 0;
     const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
-    row.addEventListener("pointerdown", () => {
-      longPressed = false;
+    row.addEventListener("pointerdown", (e) => {
+      longPressed = false; sx = e.clientX; sy = e.clientY;
       timer = setTimeout(() => { longPressed = true; selectionMode = true; toggleSelectRow(row, name); if (navigator.vibrate) navigator.vibrate(25); }, 420);
     });
     row.addEventListener("pointerup", cancel);
     row.addEventListener("pointerleave", cancel);
-    row.addEventListener("pointermove", cancel); // si mueve (scroll), no cuenta como mantener
+    row.addEventListener("pointercancel", cancel);
+    // Solo cancela si hay movimiento REAL (scroll); el temblor del dedo no cuenta.
+    row.addEventListener("pointermove", (e) => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 12) cancel(); });
+    row.addEventListener("contextmenu", (e) => e.preventDefault()); // que el menú nativo no robe la pulsación larga
     row.addEventListener("click", () => {
       if (longPressed) { longPressed = false; return; }
       if (selectionMode) toggleSelectRow(row, name);
@@ -596,11 +599,25 @@ async function fetchCardFile(name, i) {
   return new File([blob], `${String(i + 1).padStart(2, "0")}-${safe}.jpg`, { type: blob.type || "image/jpeg" });
 }
 
+let pendingShareFiles = null; // fotos ya descargadas, esperando el 2º toque para compartir
+
 async function shareSelectedPhotos() {
+  const btn = $("sharePhotos");
+  const isMobileShare = navigator.canShare && matchMedia("(pointer: coarse)").matches;
+
+  // 2º toque en móvil: compartir ya descargadas (el share nativo exige un clic "fresco").
+  if (pendingShareFiles) {
+    const files = pendingShareFiles;
+    pendingShareFiles = null;
+    btn.textContent = "📸";
+    try { await navigator.share({ files }); } catch (e) { if (e.name !== "AbortError") alert("❌ No pude abrir el compartir: " + e.message); }
+    return;
+  }
+
   let names = [...selected];
   if (!names.length) return;
   if (names.length > 30) { alert("Máximo 30 fotos por envío (límite de WhatsApp): uso las 30 primeras."); names = names.slice(0, 30); }
-  const btn = $("sharePhotos"); btn.disabled = true; const lbl = btn.textContent;
+  btn.disabled = true; const lbl = "📸";
   try {
     // Descarga en tandas de 6 (imágenes en tamaño normal, con TU printing si lo tienes).
     const files = [];
@@ -609,11 +626,14 @@ async function shareSelectedPhotos() {
       files.push(...chunk.filter(Boolean));
       btn.textContent = `${Math.min(i + 6, names.length)}/${names.length}`;
     }
-    if (!files.length) { alert("❌ No pude descargar las imágenes."); return; }
+    if (!files.length) { alert("❌ No pude descargar las imágenes."); btn.textContent = lbl; return; }
 
-    // Android: compartir las fotos sueltas (elige WhatsApp en el menú).
-    if (navigator.canShare && navigator.canShare({ files })) {
-      try { await navigator.share({ files }); } catch (e) { if (e.name !== "AbortError") throw e; }
+    // Móvil: dejar listo y pedir el 2º toque (así el navegador permite abrir el compartir).
+    if (isMobileShare && navigator.canShare({ files })) {
+      pendingShareFiles = files;
+      btn.disabled = false;
+      btn.textContent = `📤 ${files.length}`;
+      alert(`📸 ${files.length} fotos listas. Toca 📤 para enviarlas (elige WhatsApp).`);
       return;
     }
 
@@ -643,7 +663,10 @@ async function shareSelectedPhotos() {
       a.click();
       alert("📸 No pude copiar al portapapeles: te lo descargo como cartas.png.");
     }
-  } finally { btn.disabled = false; btn.textContent = lbl; }
+  } finally {
+    btn.disabled = false;
+    if (!pendingShareFiles) btn.textContent = lbl; // en móvil se queda "📤 N" hasta el 2º toque
+  }
 }
 
 function toggleSelectAll() {
