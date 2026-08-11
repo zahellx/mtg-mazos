@@ -264,14 +264,17 @@
     return Date.parse((await r.json()).generatedAt) || 0;
   }
 
-  async function deckRefreshCheck() {
+  let deckRefreshRunning = false;
+  async function deckRefresh(force) {
     const cfg = getCfg();
-    if (!cfg.token) return;
+    if (!cfg.token || deckRefreshRunning) return;
     let gen = 0;
     try { gen = await decksGeneratedAt(); } catch { return; }
-    if (Date.now() - gen < DECKS_STALE_MS) return; // datos recientes
-    const last = Number(localStorage.getItem(DISPATCH_STAMP) || 0);
-    if (Date.now() - last < DECKS_STALE_MS) return; // ya lo pedimos hace poco
+    if (!force) {
+      if (Date.now() - gen < DECKS_STALE_MS) return; // datos recientes
+      const last = Number(localStorage.getItem(DISPATCH_STAMP) || 0);
+      if (Date.now() - last < DECKS_STALE_MS) return; // ya lo pedimos hace poco
+    }
     const owner = location.hostname.split(".")[0];
     const repo = location.pathname.split("/").filter(Boolean)[0] || "mtg-mazos";
     try {
@@ -280,9 +283,13 @@
         headers: { ...headers(cfg), "Content-Type": "application/json" },
         body: JSON.stringify({ ref: "main" }),
       });
-      if (res.status !== 204) return; // sin permiso Actions: se queda con el cron diario
+      if (res.status !== 204) {
+        if (force) toast(`❌ No pude lanzar el refresco (HTTP ${res.status}). ¿El token tiene Actions: write?`, false);
+        return;
+      }
       localStorage.setItem(DISPATCH_STAMP, String(Date.now()));
-      // Vigilar ~7 min por si publica una versión nueva (solo publica si hubo cambios).
+      deckRefreshRunning = true;
+      // Vigilar ~8 min por si publica una versión nueva (solo publica si hubo cambios).
       busyStart("Comprobando Archidekt…");
       let tries = 0;
       const iv = setInterval(async () => {
@@ -291,19 +298,40 @@
           const g = await decksGeneratedAt();
           if (g > gen) {
             clearInterval(iv);
+            deckRefreshRunning = false;
             busyEnd();
             toast("🃏 Mazos actualizados desde Archidekt");
             setTimeout(() => location.reload(), 900);
             return;
           }
         } catch {}
-        if (tries >= 14) { clearInterval(iv); busyEnd(); }
-      }, 30000);
-    } catch { /* silencioso */ }
+        if (tries >= 32) {
+          clearInterval(iv);
+          deckRefreshRunning = false;
+          busyEnd();
+          if (force) toast("✅ Mazos ya al día (sin cambios en Archidekt)");
+        }
+      }, 15000);
+    } catch { deckRefreshRunning = false; if (force) toast("❌ Error lanzando el refresco", false); }
+  }
+  const deckRefreshCheck = () => deckRefresh(false);
+
+  // Botón "🔄" junto a la línea de estado de mazos: fuerza el refresco ya.
+  function addDeckRefreshButton() {
+    const meta = document.getElementById("syncMeta");
+    if (!meta || document.getElementById("deckRefreshBtn")) return;
+    const b = document.createElement("button");
+    b.id = "deckRefreshBtn";
+    b.textContent = "🔄";
+    b.title = "Actualizar mazos desde Archidekt ahora";
+    b.style.cssText = "margin-left:8px;background:none;border:1px solid #2a2f3a;border-radius:8px;color:#9aa1ad;padding:1px 8px;font-size:12px;cursor:pointer;vertical-align:middle";
+    b.onclick = () => deckRefresh(true);
+    meta.appendChild(b);
   }
 
   function start() {
     addButton();
+    addDeckRefreshButton();
     syncNow();
     deckRefreshCheck();
     setInterval(() => { if (!document.hidden) syncNow(); }, 60000);
