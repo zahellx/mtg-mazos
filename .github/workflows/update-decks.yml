@@ -37,15 +37,19 @@ jobs:
       # En cron/dispatch, solo desplegamos si los mazos realmente cambiaron en
       # Archidekt (comparando con lo ya publicado, ignorando generatedAt).
       # En push siempre se despliega (puede haber cambios de código).
-      - name: Comprobar si hay cambios en los mazos
+      - name: Comprobar si hay cambios (mazos o código)
         id: diff
         run: |
           curl -s "https://zahellx.github.io/${GITHUB_REPOSITORY#*/}/data/decks-data.json" -o /tmp/live.json || echo '{}' > /tmp/live.json
+          curl -s "https://zahellx.github.io/${GITHUB_REPOSITORY#*/}/sw.js" -o /tmp/live-sw.js || true
           node -e "
             const fs = require('fs');
             const strip = (p) => { try { const o = JSON.parse(fs.readFileSync(p, 'utf8')); delete o.generatedAt; return JSON.stringify(o); } catch { return ''; } };
-            const changed = strip('data/decks-data.json') !== strip('/tmp/live.json');
-            console.log('changed =', changed);
+            const ver = (p) => { try { return (fs.readFileSync(p, 'utf8').match(/mtg-mazos-v\d+/) || [''])[0]; } catch { return ''; } };
+            const decksChanged = strip('data/decks-data.json') !== strip('/tmp/live.json');
+            const codeChanged = ver('sw.js') !== ver('/tmp/live-sw.js');
+            const changed = decksChanged || codeChanged;
+            console.log('decksChanged =', decksChanged, '| codeChanged =', codeChanged);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, 'changed=' + changed + '\n');
           "
 
