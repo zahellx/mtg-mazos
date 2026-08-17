@@ -406,7 +406,13 @@ function renderConflicts() {
 
     const isOrdered = orders[c.name] != null;
     const inCM = cardmarket[c.name] != null;
-    const badges = (proxy ? ' <span class="prx-badge">🎭 proxy</span>' : "") +
+    // Proxy diferenciado: ¿tienes la carta real en algún sitio de la colección?
+    const proxyBadge = proxy
+      ? (ownedOf(c.name) > 0
+          ? ' <span class="prx-badge has">🎭 proxy · tienes la real</span>'
+          : ' <span class="prx-badge none">🎭 proxy · sin real</span>')
+      : "";
+    const badges = proxyBadge +
       (isOrdered ? ' <span class="ord-badge">🛒 pedida</span>' : "") +
       (inCM ? ' <span class="cm-badge">📋 Cardmarket</span>' : "");
     return `
@@ -704,17 +710,24 @@ function renderChanges() {
     wrap.innerHTML = `<div class="empty"><div class="big">✅</div><div>El mazo físico coincide con Archidekt.</div></div>`;
     return;
   }
-  const row = (c, kind) => `
+  const row = (c, kind) => {
+    const proxyBadge = isProxy(currentDeck.name, c.name)
+      ? (ownedOf(c.name) > 0
+          ? ' <span class="prx-badge has">🎭 proxy · tienes la real</span>'
+          : ' <span class="prx-badge none">🎭 proxy · sin real</span>')
+      : "";
+    return `
     <div class="change-row" data-card="${escapeHtml(c.name)}">
       ${cardImgTag(c.name)}
       <div class="cr-info">
-        <div class="cr-name">${escapeHtml(c.name)}</div>
+        <div class="cr-name">${escapeHtml(c.name)}${proxyBadge}</div>
         <div class="cr-sub">${kind === "add"
           ? (c.basic ? "Tierra básica" : (c.inPool ? `Tienes ${c.inPool} suelta(s) en tu pool` : "No la tienes suelta"))
           : "Sobra en la carpeta del mazo"}</div>
       </div>
       <div class="qbadge ${kind === "add" ? "add" : "rem"}">${kind === "add" ? "+" : "−"}${c.qty}</div>
     </div>`;
+  };
   // Copias totales (no líneas) y aviso de básicas ocultas por el toggle.
   const sumQty = (arr) => arr.reduce((s, c) => s + c.qty, 0);
   const hiddenNote = (arr) => {
