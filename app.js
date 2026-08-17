@@ -284,12 +284,31 @@ function renderCollectionStatus() {
   $("reimport").onclick = (e) => { e.preventDefault(); $("csvInput").click(); };
 }
 
+let activeTagFilters = new Set();
+
+function renderTagFilters() {
+  const wrap = $("tagFilters");
+  const allTags = [...new Set(decksData.decks.flatMap((d) => d.tags || []))].sort();
+  if (!allTags.length) { wrap.innerHTML = ""; return; }
+  wrap.innerHTML = allTags.map((t) =>
+    `<span class="chip${activeTagFilters.has(t) ? " active" : ""}" data-tag="${escapeHtml(t)}">🏷️ ${escapeHtml(t)}</span>`).join("");
+  wrap.querySelectorAll(".chip").forEach((c) => {
+    c.onclick = () => {
+      const t = c.dataset.tag;
+      activeTagFilters.has(t) ? activeTagFilters.delete(t) : activeTagFilters.add(t);
+      renderDecks($("deckSearch").value);
+    };
+  });
+}
+
 function renderDecks(filter = "") {
+  renderTagFilters();
   const grid = $("deckGrid");
   grid.innerHTML = "";
   const f = norm(filter);
   const decks = decksData.decks
     .filter((d) => !f || norm(d.name).includes(f))
+    .filter((d) => !activeTagFilters.size || (d.tags || []).some((t) => activeTagFilters.has(t)))
     .slice()
     .sort((a, b) => (deckMissingCount(b) || 0) - (deckMissingCount(a) || 0) || a.name.localeCompare(b.name));
 
@@ -312,10 +331,13 @@ function renderDecks(filter = "") {
     }
     const el = document.createElement("div");
     el.className = "deck-card";
+    const dtags = (deck.tags || []).length
+      ? `<div class="dtags">${deck.tags.map((t) => `<span class="dtag">🏷️ ${escapeHtml(t)}</span>`).join("")}</div>` : "";
     el.innerHTML = `
       <div class="info">
         <div class="name">${escapeHtml(deck.name)}</div>
         <div class="sub">${deck.commander ? "👑 " + escapeHtml(deck.commander) : deck.cards.length + " cartas"}</div>
+        ${dtags}
       </div>
       ${badge}`;
     el.onclick = () => openDeck(deck);

@@ -651,11 +651,13 @@ function drawConfig(isSeed) {
     (isSeed ? " · <b>sin guardar</b> (creados desde la config actual; pulsa Guardar)" : "");
 
   const opts = `<datalist id="folderOptions">${allFolders.map((f) => `<option value="${escapeHtml(f)}">`).join("")}</datalist>`;
+  const tagsStr = (d) => Array.isArray(d.tags) ? d.tags.join(", ") : (d.tags || "");
   const rows = deckCfg.decks.map((d, i) => `
     <div class="cfg-row">
       <input class="cfg-name" data-i="${i}" placeholder="Nombre" value="${escapeHtml(d.name || "")}" />
       <input class="cfg-id" data-i="${i}" inputmode="numeric" placeholder="Archidekt ID" value="${escapeHtml(String(d.archideck_id || ""))}" />
       <input class="cfg-folder" data-i="${i}" list="folderOptions" placeholder="Carpeta ManaBox (opcional)" value="${escapeHtml(d.manaboxFolder || "")}" />
+      <input class="cfg-tags" data-i="${i}" placeholder="etiquetas (coma): precon, budget…" value="${escapeHtml(tagsStr(d))}" />
       <button class="cfg-del" data-i="${i}" title="Borrar">🗑️</button>
     </div>`).join("");
 
@@ -679,6 +681,7 @@ function drawConfig(isSeed) {
   $("configBody").querySelectorAll(".cfg-name").forEach((el) => { el.oninput = () => { deckCfg.decks[+el.dataset.i].name = el.value; }; });
   $("configBody").querySelectorAll(".cfg-id").forEach((el) => { el.oninput = () => { deckCfg.decks[+el.dataset.i].archideck_id = el.value.replace(/[^0-9]/g, ""); }; });
   $("configBody").querySelectorAll(".cfg-folder").forEach((el) => { el.oninput = () => { deckCfg.decks[+el.dataset.i].manaboxFolder = el.value; }; });
+  $("configBody").querySelectorAll(".cfg-tags").forEach((el) => { el.oninput = () => { deckCfg.decks[+el.dataset.i].tags = el.value; }; });
   $("configBody").querySelectorAll(".cfg-del").forEach((el) => { el.onclick = () => { deckCfg.decks.splice(+el.dataset.i, 1); drawConfig(isSeed); }; });
   $("configBody").querySelectorAll(".free-folder").forEach((el) => {
     el.onclick = () => { deckCfg.decks.push({ name: el.dataset.f, archideck_id: "", manaboxFolder: el.dataset.f }); drawConfig(isSeed); };
@@ -700,6 +703,8 @@ async function saveConfig() {
           name: (d.name || "").trim() || (String(d.archideck_id || "").trim() ? `Deck ${d.archideck_id}` : "(sin nombre)"),
           archideck_id: parseInt(d.archideck_id, 10) || null,
           manaboxFolder: (d.manaboxFolder || "").trim() || undefined,
+          tags: (Array.isArray(d.tags) ? d.tags : String(d.tags || "").split(","))
+            .map((t) => String(t).trim().toLowerCase()).filter(Boolean),
         })),
     };
     const pending = clean.decks.filter((d) => !d.archideck_id).length;

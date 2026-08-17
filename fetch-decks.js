@@ -28,7 +28,7 @@ async function loadDeckConfig() {
         const cfg = JSON.parse(Buffer.from(j.content, "base64").toString("utf8"));
         const decks = (cfg.decks || [])
           .filter((d) => d.archideck_id)
-          .map((d) => ({ name: d.name, archideck_id: d.archideck_id, manaboxFolder: d.manaboxFolder || undefined }));
+          .map((d) => ({ name: d.name, archideck_id: d.archideck_id, manaboxFolder: d.manaboxFolder || undefined, tags: Array.isArray(d.tags) ? d.tags : [] }));
         if (decks.length) { console.log(`Config desde repo privado: ${decks.length} mazos`); return decks; }
         console.log("decks-config.json vacío; uso config.js");
       } else if (res.status !== 404) {
@@ -72,6 +72,7 @@ async function fetchDeck(deck) {
         name: deck.name || data.name,
         manaboxFolder: deck.manaboxFolder || deck.name || data.name,
         archideckId: deck.archideck_id,
+        tags: deck.tags || [],
         commander,
         cards,
     };
