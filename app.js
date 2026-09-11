@@ -970,16 +970,19 @@ function renderPrices() {
 async function consumeSharedCSV() {
   try {
     const res = await caches.match("shared-csv");
-    if (!res) return false;
+    if (!res) return { ok: false, reason: "El compartir no traía ningún fichero." };
     const text = await res.text();
     // Borra la entrada temporal de todas las cachés donde pueda estar.
     for (const name of await caches.keys()) {
       const c = await caches.open(name);
       await c.delete("shared-csv");
     }
-    if (text && text.trim()) { importCSV(text); return true; }
-  } catch (_) { /* ignore */ }
-  return false;
+    if (!text || !text.trim()) return { ok: false, reason: "El fichero compartido estaba vacío." };
+    importCSV(text);
+    return { ok: true, count: Object.keys(collection).length };
+  } catch (err) {
+    return { ok: false, reason: err.message };
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -987,10 +990,17 @@ async function init() {
   loadCollection();
 
   // Si venimos de "Compartir" desde ManaBox, importa el CSV recibido.
-  let sharedImported = false;
+  let shared = null;
   if (new URLSearchParams(location.search).get("shared")) {
-    sharedImported = await consumeSharedCSV();
+    const end = window.mtgSync ? window.mtgSync.busy("Importando desde ManaBox…") : () => {};
+    shared = await consumeSharedCSV();
+    end();
     history.replaceState(null, "", location.pathname);
+    if (window.mtgSync) {
+      window.mtgSync.log(shared.ok
+        ? `📦 Importado desde ManaBox: ${shared.count} cartas`
+        : `❌ Compartir de ManaBox: ${shared.reason}`, shared.ok ? "ok" : "err");
+    }
   }
   try {
     const res = await fetch("data/decks-data.json", { cache: "no-cache" });
@@ -1007,8 +1017,16 @@ async function init() {
   renderCollectionStatus();
   renderDecks();
 
-  if (sharedImported) {
-    setTimeout(() => alert(`✅ Colección importada desde ManaBox: ${Object.keys(collection).length} cartas distintas.`), 100);
+  // Tras importar desde ManaBox: subir YA a la nube (antes no se subía nunca).
+  if (shared) {
+    if (!shared.ok) {
+      if (window.mtgSync) window.mtgSync.toast("❌ " + shared.reason, false);
+    } else if (window.mtgSync) {
+      const end = window.mtgSync.busy("Subiendo la colección a la nube…");
+      window.mtgSync.sync()
+        .then(() => window.mtgSync.toast(`✅ ManaBox importado y sincronizado: ${shared.count} cartas`))
+        .finally(end);
+    }
   }
 
   // Restaurar la vista donde estabas antes de recargar.

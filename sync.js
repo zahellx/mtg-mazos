@@ -96,6 +96,53 @@
     remoteCache = null; // lo que teníamos cacheado ya no vale
   }
 
+  // ── Registro de actividad + línea de estado permanente ────────────────────────
+  const LOG_KEY = "mtg-sync-log";
+  let log = []; try { log = JSON.parse(localStorage.getItem(LOG_KEY)) || []; } catch { log = []; }
+  function logEvent(msg, kind) {
+    log.push({ t: Date.now(), msg, kind: kind || "info" });
+    if (log.length > 40) log = log.slice(-40);
+    try { localStorage.setItem(LOG_KEY, JSON.stringify(log)); } catch {}
+    renderStatus();
+  }
+  const SHORT = {
+    "mtg-collection-v1": "colección", "mtg-collection-data-v1": "colección(detalle)",
+    "mtg-price-snapshots-v1": "precios", "mtg-orders-v1": "pedidas",
+    "mtg-cardmarket-v1": "cardmarket", "mtg-proxies-v1": "proxies", "mtg-sell-v1": "vender",
+  };
+  const shortName = (k) => SHORT[k] || k;
+  const hace = (ts) => {
+    if (!ts) return "nunca";
+    const s = Math.round((Date.now() - ts) / 1000);
+    if (s < 60) return `hace ${s}s`;
+    if (s < 3600) return `hace ${Math.round(s / 60)} min`;
+    return `hace ${Math.round(s / 3600)} h`;
+  };
+  function pendingKeys() {
+    if (!remoteCache) return [];
+    return DATA_KEYS.filter((k) => localStorage.getItem(k) != null && (keyTs[k] || 0) > ((remoteCache.keys[k] || {}).ts || 0));
+  }
+  let statusEl = null;
+  function renderStatus() {
+    if (!statusEl) {
+      const meta = document.getElementById("syncMeta");
+      if (!meta) return;
+      statusEl = document.createElement("div");
+      statusEl.id = "mtg-sync-status";
+      statusEl.style.cssText = "font-size:11.5px;color:#9aa1ad;margin-top:3px;cursor:pointer";
+      statusEl.title = "Toca para ver el detalle";
+      statusEl.onclick = openModal;
+      meta.parentNode.insertBefore(statusEl, meta.nextSibling);
+    }
+    const cfg = getCfg();
+    if (!cfg.token) { statusEl.textContent = "☁️ Sync sin configurar — toca para poner el token"; return; }
+    if (syncing || deckRefreshRunning) { statusEl.textContent = "🔄 " + (busyBase || "Trabajando…"); return; }
+    if (lastSyncError) { statusEl.textContent = "❌ " + lastSyncError + " — toca para ver"; return; }
+    const pend = pendingKeys();
+    if (pend.length) { statusEl.textContent = `⬆️ ${pend.length} dato(s) sin subir — toca para ver`; return; }
+    statusEl.textContent = `☁️ Al día · comprobado ${hace(lastSyncAt)}`;
+  }
+
   // ── Ciclo de sincronización: fusión por clave ─────────────────────────────────
   let syncing = false, lastSyncError = null, lastSyncAt = 0;
   async function syncNow(manual) {
@@ -130,23 +177,31 @@
       persistMeta();
       if (needPush) {
         busyLabel("Subiendo a la nube…");
-        try { await putRemote(cfg, merged, remote.sha); lastSyncError = null; }
-        catch (err) {
+        const names = DATA_KEYS.filter((k) => merged[k] && merged[k].ts === (keyTs[k] || 0)).map(shortName);
+        try {
+          await putRemote(cfg, merged, remote.sha);
+          lastSyncError = null;
+          logEvent(`⬆️ Subido: ${names.join(", ") || "datos"}`, "ok");
+        } catch (err) {
           // No se traga el error: se avisa y queda registrado para el panel de estado.
           lastSyncError = err.message;
+          logEvent(`❌ Fallo al subir: ${err.message}`, "err");
           toast("❌ No pude subir a la nube: " + err.message, false);
         }
       }
       if (pulled.length) {
         busyLabel("Aplicando cambios…");
+        logEvent(`⬇️ Bajado: ${pulled.map(shortName).join(", ")}`, "ok");
         toast("☁️ Datos actualizados desde la nube");
         setTimeout(() => location.reload(), 900);
       }
+      if (!needPush && !pulled.length) lastSyncError = null;
     } catch (err) {
       lastSyncError = err.message;
+      logEvent(`❌ Sync: ${err.message}`, "err");
       if (manual) toast("❌ Sync: " + err.message, false);
     }
-    finally { syncing = false; busyEnd(); }
+    finally { syncing = false; busyEnd(); renderStatus(); }
   }
 
   // ── Indicador de sync en curso (arriba a la derecha) ──────────────────────────
@@ -232,6 +287,8 @@
         <button id="sy-upcol" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">📦 Subir solo la colección de este dispositivo</button>
         <button id="sy-diag" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">🔍 Ver estado de cada dato</button>
         <div id="sy-diag-out" style="font-size:11.5px;color:#9aa1ad;margin-top:8px"></div>
+        <div style="font-size:12px;color:#9aa1ad;margin:12px 0 4px;font-weight:600">📜 Actividad reciente</div>
+        <div id="sy-log" style="font-size:11px;color:#9aa1ad;max-height:150px;overflow-y:auto;background:#0f1115;border:1px solid #2a2f3a;border-radius:9px;padding:8px"></div>
         <button id="sy-close" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">Cerrar</button>
       </div>`;
     document.body.appendChild(wrap);
@@ -243,6 +300,20 @@
       const token = (tokenField && tokenField !== "••••••••") ? tokenField.trim() : c.token;
       return { ...c, token, owner: q("#sy-owner").value.trim(), repo: q("#sy-repo").value.trim(), path: c.path || "collection.json", branch: c.branch || "main" };
     };
+    // Registro persistente: sobrevive a las recargas, para saber qué pasó.
+    const renderLog = () => {
+      const el = q("#sy-log");
+      if (!el) return;
+      el.innerHTML = log.length
+        ? log.slice().reverse().map((e) => {
+            const hora = new Date(e.t).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+            const dia = new Date(e.t).toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+            const col = e.kind === "err" ? "#f08a8a" : e.kind === "ok" ? "#5fd98a" : "#9aa1ad";
+            return `<div style="color:${col};padding:1px 0">${dia} ${hora} · ${e.msg}</div>`;
+          }).join("")
+        : "<div style='opacity:.6'>Sin actividad registrada todavía.</div>";
+    };
+    renderLog();
     q("#sy-close").onclick = () => wrap.remove();
     wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
     q("#sy-save").onclick = () => { setCfg(readForm()); status("✅ Config guardada."); };
@@ -345,9 +416,10 @@
     sync: () => syncNow(),                       // promesa: termina cuando acaba el ciclo
     refreshDeck: (name) => deckRefresh(true, name), // refrescar solo ese mazo
     toast,
+    log: logEvent,
     // Indicador ocupado para procesos de la app: const end = mtgSync.busy("…"); end();
-    busy: (label) => { busyStart(label); let done = false; return () => { if (!done) { done = true; busyEnd(); } }; },
-    setBusy: busyLabel,
+    busy: (label) => { busyStart(label); renderStatus(); let done = false; return () => { if (!done) { done = true; busyEnd(); renderStatus(); } }; },
+    setBusy: (l) => { busyLabel(l); renderStatus(); },
   };
 
   // ── Refresco de mazos desde Archidekt al entrar ────────────────────────────────
@@ -392,6 +464,7 @@
       deckRefreshRunning = true;
       // Vigilar ~8 min por si publica una versión nueva (solo publica si hubo cambios).
       busyStart(`Actualizando ${what} desde Archidekt…`);
+      logEvent(`🔄 Pedido refresco de ${what}`);
       if (force) toast(`🔄 Pedido el refresco de ${what}. Puede tardar 1-2 min.`);
       let tries = 0;
       const iv = setInterval(async () => {
@@ -402,6 +475,7 @@
             clearInterval(iv);
             deckRefreshRunning = false;
             busyEnd();
+            logEvent(`🃏 Mazos actualizados desde Archidekt`, "ok");
             toast("🃏 Mazos actualizados desde Archidekt");
             setTimeout(() => location.reload(), 900);
             return;
@@ -411,6 +485,8 @@
           clearInterval(iv);
           deckRefreshRunning = false;
           busyEnd();
+          renderStatus();
+          logEvent(`⏳ Refresco de ${what}: sin publicación nueva tras 8 min`);
           if (force) toast("✅ Sin cambios en Archidekt (o el despliegue va lento)");
         }
       }, 15000);
@@ -434,6 +510,8 @@
   function start() {
     addButton();
     addDeckRefreshButton();
+    renderStatus();
+    setInterval(renderStatus, 5000); // mantiene fresco el "hace Xs"
     syncNow();
     deckRefreshCheck();
     setInterval(() => { if (!document.hidden) syncNow(); }, 60000);
