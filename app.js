@@ -1033,6 +1033,15 @@ async function init() {
   if (shared) {
     if (!shared.ok) {
       if (window.mtgSync) window.mtgSync.toast("❌ " + shared.reason, false);
+      // Plan B: si el compartir no trajo el fichero, ofrecer elegirlo a mano.
+      const bar = $("collectionStatus");
+      if (bar) {
+        bar.innerHTML = `<span style="color:var(--bad)">❌ El compartir de ManaBox no traía el fichero.</span>
+          <div class="note" style="margin-top:4px">${escapeHtml(shared.reason)}</div>
+          <button class="btn" id="pickManual" style="margin-top:8px">📂 Elegir el CSV manualmente</button>`;
+        const pm = $("pickManual");
+        if (pm) pm.onclick = () => $("csvInput").click();
+      }
     } else if (window.mtgSync) {
       const end = window.mtgSync.busy("Subiendo la colección a la nube…");
       window.mtgSync.sync()
