@@ -173,13 +173,21 @@ function changesForDeck(deck) {
   const target = {};
   deck.cards.forEach((c) => { target[c.name] = c.quantity; });
 
+  const myFolderName = deck.manaboxFolder || deck.name;
   const toAdd = [], toRemove = [];
   for (const c of deck.cards) {
     const have = folder[c.name] || 0;
     if (have < c.quantity) {
       const n = c.quantity - have;
       const inPool = pool[c.name] || 0; // ¿lo tienes suelto en archivador/bundles?
-      toAdd.push({ name: c.name, qty: n, type: c.type || "", basic: BASICS.has(c.name), inPool });
+      // Si no hay copia libre, ¿está en otro mazo? Se puede mover de mazo a mazo.
+      const inDecks = [];
+      for (const [folderName, cards] of Object.entries(deckFolders)) {
+        if (folderName === myFolderName) continue;
+        const q = cards[c.name] || 0;
+        if (q > 0) inDecks.push({ name: folderLabel(folderName), qty: q });
+      }
+      toAdd.push({ name: c.name, qty: n, type: c.type || "", basic: BASICS.has(c.name), inPool, inDecks });
     }
   }
   for (const [name, have] of Object.entries(folder)) {
@@ -738,14 +746,29 @@ function renderChanges() {
           ? ' <span class="prx-badge has">🎭 proxy · tienes la real</span>'
           : ' <span class="prx-badge none">🎭 proxy · sin real</span>')
       : "";
+    // Para las que hay que meter: de dónde sacarla. Si no hay copia libre en
+    // carpetas pero sí está en otro mazo, se puede mover de mazo a mazo.
+    let sub, extra = "";
+    if (kind !== "add") {
+      sub = "Sobra en la carpeta del mazo";
+    } else if (c.basic) {
+      sub = "Tierra básica";
+    } else if (c.inPool) {
+      sub = `📦 Tienes ${c.inPool} suelta(s) en tu pool`;
+    } else if (c.inDecks && c.inDecks.length) {
+      sub = `<span class="loc warn">🔁 Sin copia libre · sácala de otro mazo:</span>`;
+      extra = `<div class="chips">${c.inDecks.map((o) =>
+        `<span class="chip">🗂️ ${escapeHtml(o.name)}${o.qty > 1 ? " ×" + o.qty : ""}</span>`).join("")}</div>`;
+    } else {
+      sub = `<span class="loc bad">🛒 No la tienes en ningún sitio</span>`;
+    }
     return `
     <div class="change-row" data-card="${escapeHtml(c.name)}">
       ${cardImgTag(c.name)}
       <div class="cr-info">
         <div class="cr-name">${escapeHtml(c.name)}${proxyBadge}</div>
-        <div class="cr-sub">${kind === "add"
-          ? (c.basic ? "Tierra básica" : (c.inPool ? `Tienes ${c.inPool} suelta(s) en tu pool` : "No la tienes suelta"))
-          : "Sobra en la carpeta del mazo"}</div>
+        <div class="cr-sub">${sub}</div>
+        ${extra}
       </div>
       <div class="qbadge ${kind === "add" ? "add" : "rem"}">${kind === "add" ? "+" : "−"}${c.qty}</div>
     </div>`;
