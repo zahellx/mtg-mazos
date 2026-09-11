@@ -51,9 +51,15 @@
   function apiBase(cfg) { return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path || "collection.json").replace(/%2F/g, "/")}`; }
   function headers(cfg) { return { Authorization: `Bearer ${cfg.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }; }
 
+  // Caché con ETag: si la nube no cambió, GitHub responde 304 y evitamos
+  // descargar el fichero entero (pesa MB) en cada comprobación.
+  let remoteCache = null; // {etag, sha, keys}
   async function getRemote(cfg) {
     const url = apiBase(cfg) + `?ref=${cfg.branch || "main"}`;
-    const res = await fetch(url, { headers: headers(cfg), cache: "no-store" });
+    const hdrs = { ...headers(cfg) };
+    if (remoteCache && remoteCache.etag) hdrs["If-None-Match"] = remoteCache.etag;
+    const res = await fetch(url, { headers: hdrs, cache: "no-store" });
+    if (res.status === 304 && remoteCache) return { exists: true, sha: remoteCache.sha, keys: remoteCache.keys };
     if (res.status === 404) return { exists: false, keys: {} };
     if (!res.ok) throw new Error(`GitHub GET ${res.status}`);
     const j = await res.json();
@@ -73,6 +79,7 @@
         for (const [k, value] of Object.entries(bundle.data)) keys[k] = { ts, value };
       }
     } catch {}
+    remoteCache = { etag: res.headers.get("etag"), sha: j.sha, keys };
     return { exists: true, sha: j.sha, keys };
   }
 
@@ -85,14 +92,17 @@
     };
     if (sha) body.sha = sha;
     const res = await fetch(apiBase(cfg), { method: "PUT", headers: { ...headers(cfg), "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`GitHub PUT ${res.status}`);
+    if (!res.ok) throw new Error(`GitHub PUT ${res.status}: ${(await res.text()).slice(0, 120)}`);
+    remoteCache = null; // lo que teníamos cacheado ya no vale
   }
 
   // ── Ciclo de sincronización: fusión por clave ─────────────────────────────────
-  let syncing = false;
-  async function syncNow() {
+  let syncing = false, lastSyncError = null, lastSyncAt = 0;
+  async function syncNow(manual) {
     const cfg = getCfg();
-    if (!cfg.token || syncing) return;
+    if (!cfg.token) { if (manual) toast("❌ Falta el token (botón ☁️)", false); return; }
+    if (syncing) return;
+    lastSyncAt = Date.now();
     syncing = true;
     busyStart("Comprobando la nube…");
     try {
@@ -120,15 +130,22 @@
       persistMeta();
       if (needPush) {
         busyLabel("Subiendo a la nube…");
-        try { await putRemote(cfg, merged, remote.sha); }
-        catch (_) { /* conflicto simultáneo: el próximo ciclo re-fusiona */ }
+        try { await putRemote(cfg, merged, remote.sha); lastSyncError = null; }
+        catch (err) {
+          // No se traga el error: se avisa y queda registrado para el panel de estado.
+          lastSyncError = err.message;
+          toast("❌ No pude subir a la nube: " + err.message, false);
+        }
       }
       if (pulled.length) {
         busyLabel("Aplicando cambios…");
         toast("☁️ Datos actualizados desde la nube");
         setTimeout(() => location.reload(), 900);
       }
-    } catch (_) { /* sin red o token: silencioso */ }
+    } catch (err) {
+      lastSyncError = err.message;
+      if (manual) toast("❌ Sync: " + err.message, false);
+    }
     finally { syncing = false; busyEnd(); }
   }
 
@@ -212,6 +229,9 @@
           <button id="sy-up" style="flex:1;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">⬆️ Forzar subir todo</button>
           <button id="sy-down" style="flex:1;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">⬇️ Forzar bajar todo</button>
         </div>
+        <button id="sy-upcol" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">📦 Subir solo la colección de este dispositivo</button>
+        <button id="sy-diag" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">🔍 Ver estado de cada dato</button>
+        <div id="sy-diag-out" style="font-size:11.5px;color:#9aa1ad;margin-top:8px"></div>
         <button id="sy-close" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">Cerrar</button>
       </div>`;
     document.body.appendChild(wrap);
@@ -226,7 +246,7 @@
     q("#sy-close").onclick = () => wrap.remove();
     wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
     q("#sy-save").onclick = () => { setCfg(readForm()); status("✅ Config guardada."); };
-    q("#sy-sync").onclick = async () => { setCfg(readForm()); status("Sincronizando…"); await syncNow(); status("✅ Sincronizado."); };
+    q("#sy-sync").onclick = async () => { setCfg(readForm()); status("Sincronizando…"); await syncNow(true); status(lastSyncError ? "❌ " + lastSyncError : "✅ Sincronizado."); };
     q("#sy-up").onclick = async () => {
       setCfg(readForm()); status("Subiendo todo…");
       try {
@@ -239,6 +259,59 @@
         await putRemote(cfg2, { ...remote.keys, ...keys }, remote.sha);
         status("✅ Subido todo.");
       } catch (e) { status("❌ " + e.message); }
+    };
+    // Sube SOLO las claves de colección de este dispositivo, sin tocar el resto
+    // (pedidas, proxies, cardmarket… se quedan como estén en la nube).
+    q("#sy-upcol").onclick = async () => {
+      setCfg(readForm());
+      status("Subiendo la colección…");
+      try {
+        const cfg2 = getCfg();
+        const COL = ["mtg-collection-v1", "mtg-collection-data-v1"];
+        const now = Date.now();
+        const mine = {};
+        for (const k of COL) {
+          const v = localStorage.getItem(k);
+          if (v != null) { mine[k] = { ts: now, value: v }; keyTs[k] = now; shadow[k] = hash(v); }
+        }
+        if (!Object.keys(mine).length) { status("Este dispositivo no tiene colección importada."); return; }
+        persistMeta();
+        remoteCache = null;
+        const remote = await getRemote(cfg2);
+        await putRemote(cfg2, { ...remote.keys, ...mine }, remote.sha);
+        status("✅ Colección subida. Los demás datos no se han tocado.");
+        toast("☁️ Colección subida a la nube");
+      } catch (e) { status("❌ " + e.message); }
+    };
+    q("#sy-diag").onclick = async () => {
+      setCfg(readForm());
+      const out = q("#sy-diag-out");
+      out.textContent = "Consultando…";
+      const fmt = (ts) => ts ? new Date(ts).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+      const NAMES = {
+        "mtg-collection-v1": "Colección", "mtg-collection-data-v1": "Colección (detalle)",
+        "mtg-price-snapshots-v1": "Precios", "mtg-orders-v1": "Pedidas",
+        "mtg-cardmarket-v1": "Cardmarket", "mtg-proxies-v1": "Proxies", "mtg-sell-v1": "Para vender",
+      };
+      try {
+        detectLocalChanges();
+        remoteCache = null; // forzar lectura fresca
+        const remote = await getRemote(getCfg());
+        const rows = DATA_KEYS.map((k) => {
+          const lts = keyTs[k] || 0, rts = (remote.keys[k] || {}).ts || 0;
+          const has = localStorage.getItem(k) != null;
+          let state = "✅ igual";
+          if (!has && !rts) state = "· sin datos";
+          else if (lts > rts) state = "⬆️ pendiente de subir";
+          else if (rts > lts) state = "⬇️ pendiente de bajar";
+          return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0">
+            <span>${NAMES[k] || k}</span><span>${state}</span></div>
+            <div style="opacity:.6;padding-bottom:4px">aquí ${fmt(lts)} · nube ${fmt(rts)}</div>`;
+        }).join("");
+        out.innerHTML = rows +
+          (lastSyncError ? `<div style="color:#f08a8a;margin-top:6px">Último error: ${lastSyncError}</div>` : "") +
+          `<div style="opacity:.6;margin-top:6px">Última comprobación: ${fmt(lastSyncAt)}</div>`;
+      } catch (e) { out.textContent = "❌ " + e.message; }
     };
     q("#sy-down").onclick = async () => {
       setCfg(readForm()); status("Bajando todo…");
