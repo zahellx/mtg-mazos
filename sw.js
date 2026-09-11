@@ -1,7 +1,7 @@
 // Service worker: cachea el app shell para que funcione offline.
 // El JSON de mazos se sirve network-first (para coger lo último que publicó el Action),
 // con fallback a caché si no hay red.
-const CACHE = "mtg-mazos-v55";
+const CACHE = "mtg-mazos-v56";
 const SHELL = [
   "./",
   "./index.html",
@@ -44,6 +44,11 @@ self.addEventListener("fetch", (e) => {
     e.respondWith((async () => {
       const debug = [];
       let text = "";
+      // Copia cruda ANTES de interpretar: así sabemos si Android manda algo o no.
+      let raw = null;
+      const ct = e.request.headers.get("content-type") || "";
+      try { raw = await e.request.clone().arrayBuffer(); } catch (_) {}
+      debug.push({ contentType: ct.slice(0, 80), cuerpoBytes: raw ? raw.byteLength : -1 });
       try {
         const form = await e.request.formData();
         // Tolerante: vale cualquier campo, sea fichero o texto (ManaBox puede
@@ -66,6 +71,24 @@ self.addEventListener("fetch", (e) => {
           }
         }
       } catch (err) { debug.push({ error: err.message }); }
+      // Rescate: si el lector estándar no sacó nada pero SÍ hay cuerpo, lo
+      // troceamos a mano (multipart) y nos quedamos con la parte más grande.
+      if (!text && raw && raw.byteLength > 0) {
+        try {
+          const decoded = new TextDecoder("utf-8").decode(raw);
+          const bm = ct.match(/boundary=(?:"([^"]+)"|([^;]+))/);
+          const boundary = bm ? (bm[1] || bm[2]).trim() : null;
+          const trozos = boundary ? decoded.split("--" + boundary) : [decoded];
+          let mejor = "";
+          for (const t of trozos) {
+            const i = t.indexOf("\r\n\r\n");
+            const cuerpo = i >= 0 ? t.slice(i + 4) : t;
+            const limpio = cuerpo.replace(/\r\n$/, "");
+            if (limpio.length > mejor.length) mejor = limpio;
+          }
+          if (mejor.trim().length > 20) { text = mejor; debug.push({ rescate: "multipart a mano", bytes: mejor.length }); }
+        } catch (err2) { debug.push({ rescateError: err2.message }); }
+      }
       try {
         const cache = await caches.open(CACHE);
         await cache.put("shared-csv", new Response(text, { headers: { "Content-Type": "text/csv" } }));
