@@ -8,7 +8,7 @@
   // Versión de ESTA copia instalada (va en los ficheros que cachea el service
   // worker, así delata si el dispositivo se quedó con una versión vieja).
   // Se sube a la vez que CACHE en sw.js.
-  const APP_VERSION = "v52";
+  const APP_VERSION = "v53";
   const CFG_KEY = "mtg-sync-config";
   const KEYTS_KEY = "mtg-sync-keyts";   // {key: ts} última versión conocida por clave
   const SHADOW_KEY = "mtg-sync-shadow"; // {key: hash} para detectar cambios locales
@@ -145,8 +145,13 @@
       await Promise.all(regs.map((r) => r.unregister()));
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
+      // Vuelve a pedir a la RED los ficheros clave: borrar el service worker no
+      // vacia la cache HTTP del navegador, que es la que servia lo viejo.
+      await Promise.all(["index.html", "sw.js", "sync.js", "app.js", "deck-builder.js", "styles.css"]
+        .map((f) => fetch(`${f}?bust=${Date.now()}`, { cache: "reload" }).catch(() => {})));
     } catch (_) {}
-    location.reload();
+    // Recarga con parametro nuevo: fuerza HTML fresco (y ese pide los .js con ?v= nuevo).
+    location.replace(location.pathname + "?fresh=" + Date.now());
   }
 
   let statusEl = null;

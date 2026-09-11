@@ -1,7 +1,7 @@
 // Service worker: cachea el app shell para que funcione offline.
 // El JSON de mazos se sirve network-first (para coger lo último que publicó el Action),
 // con fallback a caché si no hay red.
-const CACHE = "mtg-mazos-v52";
+const CACHE = "mtg-mazos-v53";
 const SHELL = [
   "./",
   "./index.html",
@@ -21,7 +21,13 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache:"reload" -> ignora la caché HTTP del navegador al instalar una versión
+  // nueva; si no, se podían cachear los ficheros VIEJOS y no actualizaba nunca.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -98,6 +104,9 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Resto (app shell): cache-first.
-  e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
+  // Resto (app shell): cache-first. ignoreSearch para que app.js?v=53 case con
+  // el app.js cacheado (los ?v= son solo para saltarse la caché del navegador).
+  e.respondWith(
+    caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || fetch(e.request))
+  );
 });
