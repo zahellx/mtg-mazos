@@ -8,7 +8,7 @@
   // Versión de ESTA copia instalada (va en los ficheros que cachea el service
   // worker, así delata si el dispositivo se quedó con una versión vieja).
   // Se sube a la vez que CACHE en sw.js.
-  const APP_VERSION = "v54";
+  const APP_VERSION = "v55";
   const CFG_KEY = "mtg-sync-config";
   const KEYTS_KEY = "mtg-sync-keyts";   // {key: ts} última versión conocida por clave
   const SHADOW_KEY = "mtg-sync-shadow"; // {key: hash} para detectar cambios locales
@@ -102,13 +102,73 @@
 
   // ── Registro de actividad + línea de estado permanente ────────────────────────
   const LOG_KEY = "mtg-sync-log";
+  const DEVICE_KEY = "mtg-device-id";
   let log = []; try { log = JSON.parse(localStorage.getItem(LOG_KEY)) || []; } catch { log = []; }
+
+  // Identificador estable del dispositivo, para separar los registros en la nube.
+  let deviceId = localStorage.getItem(DEVICE_KEY);
+  if (!deviceId) { deviceId = Math.random().toString(36).slice(2, 8); localStorage.setItem(DEVICE_KEY, deviceId); }
+  function deviceLabel() {
+    const ua = navigator.userAgent;
+    const os = /Android/i.test(ua) ? "Android" : /iPhone|iPad|iPod/i.test(ua) ? "iOS"
+      : /Windows/i.test(ua) ? "Windows" : /Mac/i.test(ua) ? "Mac" : /Linux/i.test(ua) ? "Linux" : "otro";
+    const pwa = matchMedia("(display-mode: standalone)").matches ? "-app" : "";
+    return `${os}${pwa}-${deviceId}`;
+  }
+
   function logEvent(msg, kind) {
     log.push({ t: Date.now(), msg, kind: kind || "info" });
     if (log.length > 40) log = log.slice(-40);
     try { localStorage.setItem(LOG_KEY, JSON.stringify(log)); } catch {}
     renderStatus();
+    scheduleLogUpload(kind === "err"); // los errores se suben antes
   }
+
+  // ── Registro en la nube: cada dispositivo escribe logs/<dispositivo>.json ──────
+  let logUploadTimer = null, uploadingLog = false;
+  function scheduleLogUpload(urgent) {
+    if (!getCfg().token) return;
+    if (logUploadTimer) clearTimeout(logUploadTimer);
+    logUploadTimer = setTimeout(uploadLog, urgent ? 4000 : 45000);
+  }
+  async function uploadLog() {
+    logUploadTimer = null;
+    const cfg = getCfg();
+    if (!cfg.token || uploadingLog) return;
+    uploadingLog = true;
+    try {
+      const path = `logs/${deviceLabel()}.json`;
+      const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;
+      let sha = null;
+      const g = await fetch(`${url}?ref=${cfg.branch || "main"}`, { headers: headers(cfg), cache: "no-store" });
+      if (g.ok) sha = (await g.json()).sha;
+      const payload = {
+        dispositivo: deviceLabel(),
+        app: APP_VERSION,
+        userAgent: navigator.userAgent,
+        actualizado: new Date().toISOString(),
+        entradas: log.map((e) => ({ hora: new Date(e.t).toISOString(), tipo: e.kind, msg: e.msg })),
+      };
+      const body = {
+        message: `log ${deviceLabel()} ${new Date().toISOString()}`,
+        content: b64encode(JSON.stringify(payload, null, 1)),
+        branch: cfg.branch || "main",
+      };
+      if (sha) body.sha = sha;
+      await fetch(url, { method: "PUT", headers: { ...headers(cfg), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    } catch (_) { /* nunca usar logEvent aqui: provocaria un bucle */ }
+    finally { uploadingLog = false; }
+  }
+
+  // Errores de JavaScript: también al registro (así se ven los fallos reales).
+  window.addEventListener("error", (e) => {
+    const f = (e.filename || "").split("/").pop();
+    logEvent(`💥 ${e.message} (${f}:${e.lineno})`, "err");
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    const r = e.reason;
+    logEvent(`💥 promesa: ${(r && r.message) || r}`, "err");
+  });
   const SHORT = {
     "mtg-collection-v1": "colección", "mtg-collection-data-v1": "colección(detalle)",
     "mtg-price-snapshots-v1": "precios", "mtg-orders-v1": "pedidas",
@@ -328,6 +388,7 @@
         <div id="sy-diag-out" style="font-size:11.5px;color:#9aa1ad;margin-top:8px"></div>
         <div style="font-size:12px;color:#9aa1ad;margin:12px 0 4px;font-weight:600">📜 Actividad reciente</div>
         <div id="sy-log" style="font-size:11px;color:#9aa1ad;max-height:150px;overflow-y:auto;background:#0f1115;border:1px solid #2a2f3a;border-radius:9px;padding:8px"></div>
+        <button id="sy-sendlog" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">📤 Enviar registro a la nube</button>
         <button id="sy-close" style="width:100%;margin-top:8px;padding:8px;border-radius:10px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">Cerrar</button>
       </div>`;
     document.body.appendChild(wrap);
@@ -353,6 +414,12 @@
         : "<div style='opacity:.6'>Sin actividad registrada todavía.</div>";
     };
     renderLog();
+    q("#sy-sendlog").onclick = async () => {
+      setCfg(readForm());
+      status("Enviando registro…");
+      await uploadLog();
+      status("✅ Registro enviado a logs/" + deviceLabel() + ".json");
+    };
     // Versión instalada vs publicada + botón para forzar la actualización.
     const renderVer = () => {
       const el = q("#sy-ver");
