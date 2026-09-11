@@ -5,6 +5,10 @@
 // Ciclo automático: al cargar, cada 60 s, al volver a la pestaña y tras cada cambio.
 // Formato nube v2: { app, updatedAt, keys: {key: {ts, value}} } (lee también el v1 antiguo).
 (function () {
+  // Versión de ESTA copia instalada (va en los ficheros que cachea el service
+  // worker, así delata si el dispositivo se quedó con una versión vieja).
+  // Se sube a la vez que CACHE en sw.js.
+  const APP_VERSION = "v51";
   const CFG_KEY = "mtg-sync-config";
   const KEYTS_KEY = "mtg-sync-keyts";   // {key: ts} última versión conocida por clave
   const SHADOW_KEY = "mtg-sync-shadow"; // {key: hash} para detectar cambios locales
@@ -122,6 +126,29 @@
     if (!remoteCache) return [];
     return DATA_KEYS.filter((k) => localStorage.getItem(k) != null && (keyTs[k] || 0) > ((remoteCache.keys[k] || {}).ts || 0));
   }
+  // ── Detección de versión: ¿este dispositivo tiene la última? ───────────────────
+  let liveVersion = null; // versión publicada en la web
+  async function checkVersion() {
+    try {
+      // cache:"reload" salta el service worker y va a la red de verdad.
+      const res = await fetch(`sw.js?v=${Date.now()}`, { cache: "reload" });
+      const m = (await res.text()).match(/mtg-mazos-(v\d+)/);
+      if (m) { liveVersion = m[1]; renderStatus(); }
+    } catch (_) { /* sin red: da igual */ }
+  }
+  const isOutdated = () => liveVersion && liveVersion !== APP_VERSION;
+
+  async function forceUpdate() {
+    logEvent(`⬆️ Actualizando app ${APP_VERSION} → ${liveVersion || "última"}`);
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (_) {}
+    location.reload();
+  }
+
   let statusEl = null;
   function renderStatus() {
     if (!statusEl) {
@@ -131,10 +158,16 @@
       statusEl.id = "mtg-sync-status";
       statusEl.style.cssText = "font-size:11.5px;color:#9aa1ad;margin-top:3px;cursor:pointer";
       statusEl.title = "Toca para ver el detalle";
-      statusEl.onclick = openModal;
+      statusEl.onclick = () => { if (isOutdated()) forceUpdate(); else openModal(); };
       meta.parentNode.insertBefore(statusEl, meta.nextSibling);
     }
     const cfg = getCfg();
+    if (isOutdated()) {
+      statusEl.innerHTML = `⚠️ App desactualizada (${APP_VERSION} → ${liveVersion}) — <b>toca para actualizar</b>`;
+      statusEl.style.color = "#ffb454";
+      return;
+    }
+    statusEl.style.color = "#9aa1ad";
     if (!cfg.token) { statusEl.textContent = "☁️ Sync sin configurar — toca para poner el token"; return; }
     if (syncing || deckRefreshRunning) { statusEl.textContent = "🔄 " + (busyBase || "Trabajando…"); return; }
     if (lastSyncError) { statusEl.textContent = "❌ " + lastSyncError + " — toca para ver"; return; }
@@ -266,7 +299,8 @@
     wrap.innerHTML = `
       <div style="background:#181b22;border:1px solid #2a2f3a;border-radius:16px;max-width:420px;width:100%;padding:18px;color:#e8eaed;font:14px system-ui">
         <div style="font-weight:700;font-size:16px;margin-bottom:4px">☁️ Sincronización</div>
-        <div style="color:#9aa1ad;font-size:12.5px;margin-bottom:14px">Automática: fusiona por dato (gana el más nuevo). Los botones son solo para forzar.</div>
+        <div style="color:#9aa1ad;font-size:12.5px;margin-bottom:8px">Automática: fusiona por dato (gana el más nuevo). Los botones son solo para forzar.</div>
+        <div id="sy-ver" style="font-size:12px;margin-bottom:12px;padding:8px;border-radius:9px;background:#0f1115;border:1px solid #2a2f3a"></div>
         <label style="font-size:12px;color:#9aa1ad">Token (fine-grained, Contents: read/write)</label>
         <input id="sy-token" type="password" placeholder="github_pat_..." value="${cfg.token ? "••••••••" : ""}" style="width:100%;margin:4px 0 10px;padding:9px;border-radius:9px;border:1px solid #2a2f3a;background:#0f1115;color:#e8eaed">
         <div style="display:flex;gap:8px">
@@ -314,6 +348,21 @@
         : "<div style='opacity:.6'>Sin actividad registrada todavía.</div>";
     };
     renderLog();
+    // Versión instalada vs publicada + botón para forzar la actualización.
+    const renderVer = () => {
+      const el = q("#sy-ver");
+      if (!el) return;
+      const live = liveVersion ? liveVersion : "comprobando…";
+      el.innerHTML = isOutdated()
+        ? `<span style="color:#ffb454">⚠️ Esta app: <b>${APP_VERSION}</b> · publicada: <b>${live}</b></span>
+           <button id="sy-upd" style="width:100%;margin-top:8px;padding:8px;border-radius:9px;border:none;background:#ffb454;color:#241a08;font-weight:700">⬆️ Actualizar ahora</button>`
+        : `<span>Versión de la app: <b>${APP_VERSION}</b> · publicada: <b>${live}</b> ${liveVersion === APP_VERSION ? "✅" : ""}</span>
+           <button id="sy-upd" style="width:100%;margin-top:8px;padding:8px;border-radius:9px;border:1px solid #2a2f3a;background:transparent;color:#9aa1ad">🔄 Forzar recarga de la app</button>`;
+      const b = q("#sy-upd");
+      if (b) b.onclick = forceUpdate;
+    };
+    renderVer();
+    checkVersion().then(renderVer);
     q("#sy-close").onclick = () => wrap.remove();
     wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
     q("#sy-save").onclick = () => { setCfg(readForm()); status("✅ Config guardada."); };
@@ -511,7 +560,9 @@
     addButton();
     addDeckRefreshButton();
     renderStatus();
-    setInterval(renderStatus, 5000); // mantiene fresco el "hace Xs"
+    checkVersion();                        // avisa si el dispositivo tiene una versión vieja
+    setInterval(checkVersion, 10 * 60000); // y lo revisa cada 10 min
+    setInterval(renderStatus, 5000);       // mantiene fresco el "hace Xs"
     syncNow();
     deckRefreshCheck();
     setInterval(() => { if (!document.hidden) syncNow(); }, 60000);
