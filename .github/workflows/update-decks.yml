@@ -2,6 +2,11 @@ name: Actualizar mazos y publicar
 
 on:
   workflow_dispatch:
+    inputs:
+      deck:
+        description: "Refrescar solo este mazo (vacío = todos)"
+        required: false
+        default: ""
   schedule:
     - cron: "0 6 * * *"
   push:
@@ -32,6 +37,7 @@ jobs:
       - name: Descargar mazos de Archidekt
         env:
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}   # para leer decks-config.json del repo privado
+          DECK_FILTER: ${{ inputs.deck }}         # vacío = todos los mazos
         run: node fetch-decks.js
 
       # En cron/dispatch, solo desplegamos si los mazos realmente cambiaron en

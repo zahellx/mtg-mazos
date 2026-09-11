@@ -792,7 +792,7 @@ function renderDeckTab() {
   $("conflictList").classList.toggle("hidden", !missing);
   $("changesList").classList.toggle("hidden", missing);
   $("selectAllBtn").classList.toggle("hidden", !missing);
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === currentTab));
+  document.querySelectorAll(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === currentTab));
   if (missing) { renderConflicts(); } else { $("selectionBar").classList.add("hidden"); renderChanges(); }
 }
 
@@ -1026,19 +1026,29 @@ async function init() {
   $("csvInput").onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    // Indicador visible durante TODO el proceso: leer → procesar → subir a la nube.
+    const end = window.mtgSync ? window.mtgSync.busy("Leyendo el CSV…") : () => {};
+    const step = (m) => { if (window.mtgSync) window.mtgSync.setBusy(m); };
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
+        step("Procesando la colección…");
+        await new Promise((r) => setTimeout(r, 30)); // deja pintar el indicador
         importCSV(reader.result);
+        step("Recalculando mazos…");
         renderCollectionStatus();
         renderDecks($("deckSearch").value);
         if (currentDeck) renderDeckTab();
-        if (window.mtgSync) window.mtgSync.afterImport();
-        alert(`✅ Colección importada: ${Object.keys(collection).length} cartas distintas.`);
+        if (window.mtgSync) {
+          step("Subiendo a la nube…");
+          await window.mtgSync.sync();
+          window.mtgSync.toast(`✅ Colección importada y sincronizada: ${Object.keys(collection).length} cartas`);
+        }
       } catch (err) {
         alert("❌ " + err.message);
-      }
+      } finally { end(); }
     };
+    reader.onerror = () => { end(); alert("❌ No pude leer el fichero."); };
     reader.readAsText(file);
     e.target.value = "";
   };
@@ -1068,9 +1078,13 @@ async function init() {
   $("markOrdered").onclick = markSelectedOrdered;
   $("markProxy").onclick = markSelectedProxy;
 
-  document.querySelectorAll(".tab").forEach((t) => {
+  document.querySelectorAll(".tab[data-tab]").forEach((t) => {
     t.onclick = () => { currentTab = t.dataset.tab; $("cardSearch").value = ""; selected.clear(); selectionMode = false; activeFilters.clear(); saveNav({ view: "deck", deck: currentDeck.name, tab: currentTab }); renderDeckTab(); };
   });
+  $("refreshDeckBtn").onclick = () => {
+    if (!currentDeck) return;
+    if (window.mtgSync && window.mtgSync.refreshDeck) window.mtgSync.refreshDeck(currentDeck.name);
+  };
 
   $("pricesNav").onclick = openPrices;
   $("priceSearch").oninput = renderPrices;

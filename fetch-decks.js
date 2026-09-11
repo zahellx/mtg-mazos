@@ -110,8 +110,28 @@ async function enrichWithScryfall(allNames) {
 }
 
 async function main() {
-    const deckList = await loadDeckConfig();
-    console.log(`Descargando ${deckList.length} mazos de Archidekt...`);
+    let deckList = await loadDeckConfig();
+
+    // DECK_FILTER: refrescar solo ese mazo (más rápido) manteniendo los demás.
+    const only = (process.env.DECK_FILTER || "").trim();
+    let base = [];
+    if (only) {
+        const match = deckList.filter((d) => (d.name || "").toLowerCase() === only.toLowerCase());
+        if (!match.length) {
+            console.warn(`⚠️ DECK_FILTER="${only}" no coincide con ningún mazo; refresco completo.`);
+        } else {
+            try {
+                const repo = (process.env.GITHUB_REPOSITORY || "zahellx/mtg-mazos").split("/")[1];
+                const owner = (process.env.GITHUB_REPOSITORY || "zahellx/mtg-mazos").split("/")[0];
+                const res = await fetch(`https://${owner}.github.io/${repo}/data/decks-data.json?t=${Date.now()}`);
+                if (res.ok) base = (await res.json()).decks || [];
+            } catch (e) { console.warn("No pude leer lo publicado:", e.message); }
+            if (base.length) { deckList = match; console.log(`Refresco solo de: ${match[0].name}`); }
+            else console.warn("Sin datos publicados de base; hago refresco completo.");
+        }
+    }
+
+    console.log(`Descargando ${deckList.length} mazo(s) de Archidekt...`);
     const settled = await Promise.allSettled(deckList.map(fetchDeck));
 
     const decks = [];
@@ -138,13 +158,22 @@ async function main() {
         }
     }
 
+    let finalDecks = decks;
+    // Refresco de UN solo mazo: conservamos el resto tal cual está publicado.
+    if (only && base.length) {
+        const byName = new Map(base.map((d) => [d.name, d]));
+        decks.forEach((d) => byName.set(d.name, d));
+        finalDecks = [...byName.values()];
+        console.log(`Fusionado con lo publicado: ${finalDecks.length} mazos en total`);
+    }
+
     const payload = {
         generatedAt: new Date().toISOString(),
-        deckCount: decks.length,
-        decks,
+        deckCount: finalDecks.length,
+        decks: finalDecks,
     };
     fs.writeFileSync(OUT_FILE, JSON.stringify(payload, null, 2));
-    console.log(`\n✅ Escrito ${OUT_FILE} (${decks.length} mazos)`);
+    console.log(`\n✅ Escrito ${OUT_FILE} (${finalDecks.length} mazos)`);
 }
 
 main().catch((e) => {

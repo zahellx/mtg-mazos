@@ -94,10 +94,11 @@
     const cfg = getCfg();
     if (!cfg.token || syncing) return;
     syncing = true;
-    busyStart("Sincronizando…");
+    busyStart("Comprobando la nube…");
     try {
       detectLocalChanges();
       const remote = await getRemote(cfg);
+      busyLabel("Comparando datos…");
       const merged = { ...remote.keys };
       const pulled = [];
       let needPush = !remote.exists;
@@ -118,10 +119,12 @@
       }
       persistMeta();
       if (needPush) {
+        busyLabel("Subiendo a la nube…");
         try { await putRemote(cfg, merged, remote.sha); }
         catch (_) { /* conflicto simultáneo: el próximo ciclo re-fusiona */ }
       }
       if (pulled.length) {
+        busyLabel("Aplicando cambios…");
         toast("☁️ Datos actualizados desde la nube");
         setTimeout(() => location.reload(), 900);
       }
@@ -144,15 +147,33 @@
     busyEl.innerHTML = `<span style="display:inline-block;animation:mtgspin 1s linear infinite">🔄</span><span id="mtg-busy-label"></span>`;
     document.body.appendChild(busyEl);
   }
+  let busyTimer = null, busyStartedAt = 0, busyBase = "";
+  function busyLabel(label) {
+    if (!busyEl) return;
+    busyBase = label || "Trabajando…";
+    busyEl.querySelector("#mtg-busy-label").textContent = busyBase;
+  }
   function busyStart(label) {
     ensureBusyEl();
     busyCount++;
-    busyEl.querySelector("#mtg-busy-label").textContent = label || "Sincronizando…";
+    busyLabel(label || "Sincronizando…");
     busyEl.style.display = "flex";
+    // Contador de segundos: deja claro que sigue trabajando y cuánto lleva.
+    if (!busyTimer) {
+      busyStartedAt = Date.now();
+      busyTimer = setInterval(() => {
+        if (!busyEl || !busyCount) return;
+        const s = Math.round((Date.now() - busyStartedAt) / 1000);
+        busyEl.querySelector("#mtg-busy-label").textContent = s > 2 ? `${busyBase} ${s}s` : busyBase;
+      }, 1000);
+    }
   }
   function busyEnd() {
     busyCount = Math.max(0, busyCount - 1);
-    if (!busyCount && busyEl) busyEl.style.display = "none";
+    if (!busyCount) {
+      if (busyTimer) { clearInterval(busyTimer); busyTimer = null; }
+      if (busyEl) busyEl.style.display = "none";
+    }
   }
 
   // ── UI: botón flotante + modal (config y override manual) ─────────────────────
@@ -248,6 +269,12 @@
   let changeTimer = null;
   window.mtgSync = {
     afterImport: () => { if (changeTimer) clearTimeout(changeTimer); changeTimer = setTimeout(() => { changeTimer = null; syncNow(); }, 800); },
+    sync: () => syncNow(),                       // promesa: termina cuando acaba el ciclo
+    refreshDeck: (name) => deckRefresh(true, name), // refrescar solo ese mazo
+    toast,
+    // Indicador ocupado para procesos de la app: const end = mtgSync.busy("…"); end();
+    busy: (label) => { busyStart(label); let done = false; return () => { if (!done) { done = true; busyEnd(); } }; },
+    setBusy: busyLabel,
   };
 
   // ── Refresco de mazos desde Archidekt al entrar ────────────────────────────────
@@ -265,7 +292,7 @@
   }
 
   let deckRefreshRunning = false;
-  async function deckRefresh(force) {
+  async function deckRefresh(force, deckName) {
     const cfg = getCfg();
     if (!cfg.token || deckRefreshRunning) return;
     let gen = 0;
@@ -277,11 +304,12 @@
     }
     const owner = location.hostname.split(".")[0];
     const repo = location.pathname.split("/").filter(Boolean)[0] || "mtg-mazos";
+    const what = deckName ? `“${deckName}”` : "los mazos";
     try {
       const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/update-decks.yml/dispatches`, {
         method: "POST",
         headers: { ...headers(cfg), "Content-Type": "application/json" },
-        body: JSON.stringify({ ref: "main" }),
+        body: JSON.stringify({ ref: "main", inputs: { deck: deckName || "" } }),
       });
       if (res.status !== 204) {
         if (force) toast(`❌ No pude lanzar el refresco (HTTP ${res.status}). ¿El token tiene Actions: write?`, false);
@@ -290,7 +318,8 @@
       localStorage.setItem(DISPATCH_STAMP, String(Date.now()));
       deckRefreshRunning = true;
       // Vigilar ~8 min por si publica una versión nueva (solo publica si hubo cambios).
-      busyStart("Comprobando Archidekt…");
+      busyStart(`Actualizando ${what} desde Archidekt…`);
+      if (force) toast(`🔄 Pedido el refresco de ${what}. Puede tardar 1-2 min.`);
       let tries = 0;
       const iv = setInterval(async () => {
         tries++;
@@ -309,7 +338,7 @@
           clearInterval(iv);
           deckRefreshRunning = false;
           busyEnd();
-          if (force) toast("✅ Mazos ya al día (sin cambios en Archidekt)");
+          if (force) toast("✅ Sin cambios en Archidekt (o el despliegue va lento)");
         }
       }, 15000);
     } catch { deckRefreshRunning = false; if (force) toast("❌ Error lanzando el refresco", false); }
