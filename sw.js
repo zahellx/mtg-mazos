@@ -1,7 +1,7 @@
 // Service worker: cachea el app shell para que funcione offline.
 // El JSON de mazos se sirve network-first (para coger lo último que publicó el Action),
 // con fallback a caché si no hay red.
-const CACHE = "mtg-mazos-v51";
+const CACHE = "mtg-mazos-v52";
 const SHELL = [
   "./",
   "./index.html",
@@ -36,13 +36,35 @@ self.addEventListener("fetch", (e) => {
   // Share Target (Android): ManaBox comparte el CSV -> lo guardamos y abrimos la app.
   if (e.request.method === "POST" && url.pathname.endsWith("/share-target")) {
     e.respondWith((async () => {
+      const debug = [];
+      let text = "";
       try {
         const form = await e.request.formData();
-        const file = form.get("csv");
-        const text = file ? await file.text() : "";
+        // Tolerante: vale cualquier campo, sea fichero o texto (ManaBox puede
+        // no usar el nombre "csv"). Guardamos qué llegó para poder diagnosticar.
+        for (const [name, val] of form.entries()) {
+          if (val && typeof val === "object" && typeof val.text === "function") {
+            let t = "";
+            try { t = await val.text(); } catch (_) {}
+            debug.push({ campo: name, tipo: "fichero", mime: val.type || "?", bytes: t.length });
+            if (!text && t.trim()) text = t;
+          } else {
+            const s = String(val || "");
+            debug.push({ campo: name, tipo: "texto", bytes: s.length, muestra: s.slice(0, 60) });
+          }
+        }
+        if (!text) { // ¿algún campo de texto que parezca un CSV?
+          for (const [, val] of form.entries()) {
+            const s = typeof val === "string" ? val : "";
+            if (s.includes(",") && s.includes("\n")) { text = s; break; }
+          }
+        }
+      } catch (err) { debug.push({ error: err.message }); }
+      try {
         const cache = await caches.open(CACHE);
         await cache.put("shared-csv", new Response(text, { headers: { "Content-Type": "text/csv" } }));
-      } catch (_) { /* ignore */ }
+        await cache.put("shared-csv-debug", new Response(JSON.stringify(debug), { headers: { "Content-Type": "application/json" } }));
+      } catch (_) {}
       return Response.redirect("./index.html?shared=1", 303);
     })());
     return;

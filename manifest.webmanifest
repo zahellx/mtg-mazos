@@ -16,8 +16,11 @@
     "method": "POST",
     "enctype": "multipart/form-data",
     "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
       "files": [
-        { "name": "csv", "accept": ["text/csv", ".csv", "text/comma-separated-values", "application/vnd.ms-excel", "text/plain"] }
+        { "name": "csv", "accept": ["text/csv", ".csv", "text/comma-separated-values", "application/vnd.ms-excel", "text/plain", "application/octet-stream", "text/*"] }
       ]
     }
   }

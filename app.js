@@ -968,16 +968,28 @@ function renderPrices() {
 
 // Consume el CSV recibido vía "Compartir" de Android (Share Target).
 async function consumeSharedCSV() {
+  // Qué campos llegó a mandar la app que compartió (lo guarda el service worker).
+  let detalle = "";
+  try {
+    const dbg = await caches.match("shared-csv-debug");
+    if (dbg) {
+      const arr = await dbg.json();
+      detalle = arr.length
+        ? " Recibido: " + arr.map((d) => d.error ? `error(${d.error})` : `${d.campo}=${d.tipo}/${d.bytes}B`).join(", ")
+        : " No llegó ningún campo.";
+    }
+  } catch (_) {}
   try {
     const res = await caches.match("shared-csv");
-    if (!res) return { ok: false, reason: "El compartir no traía ningún fichero." };
+    if (!res) return { ok: false, reason: "El compartir no traía ningún fichero." + detalle };
     const text = await res.text();
     // Borra la entrada temporal de todas las cachés donde pueda estar.
     for (const name of await caches.keys()) {
       const c = await caches.open(name);
       await c.delete("shared-csv");
+      await c.delete("shared-csv-debug");
     }
-    if (!text || !text.trim()) return { ok: false, reason: "El fichero compartido estaba vacío." };
+    if (!text || !text.trim()) return { ok: false, reason: "El fichero compartido estaba vacío." + detalle };
     importCSV(text);
     return { ok: true, count: Object.keys(collection).length };
   } catch (err) {
