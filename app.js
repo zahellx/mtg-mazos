@@ -974,9 +974,7 @@ async function consumeSharedCSV() {
     const dbg = await caches.match("shared-csv-debug");
     if (dbg) {
       const arr = await dbg.json();
-      detalle = arr.length
-        ? " Recibido: " + arr.map((d) => d.error ? `error(${d.error})` : `${d.campo}=${d.tipo}/${d.bytes}B`).join(", ")
-        : " No llegó ningún campo.";
+      detalle = arr.length ? " Recibido: " + JSON.stringify(arr) : " No llegó ningún campo.";
     }
   } catch (_) {}
   try {
