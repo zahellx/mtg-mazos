@@ -310,9 +310,24 @@ function renderTagFilters() {
 }
 
 function renderDecks(filter = "") {
+  try { renderDecksInner(filter); }
+  catch (err) {
+    // Si algo peta, mejor decirlo que dejar la lista en blanco.
+    $("deckGrid").innerHTML = `<div class="empty"><div class="big">⚠️</div>
+      <div>Error al listar los mazos:<br>${escapeHtml(err.message)}</div></div>`;
+    if (window.mtgSync) window.mtgSync.log(`💥 renderDecks: ${err.message}`, "err");
+  }
+}
+
+function renderDecksInner(filter = "") {
   renderTagFilters();
   const grid = $("deckGrid");
   grid.innerHTML = "";
+  if (!decksData || !Array.isArray(decksData.decks) || !decksData.decks.length) {
+    grid.innerHTML = `<div class="empty"><div class="big">📭</div><div>No hay mazos en los datos publicados.</div></div>`;
+    if (window.mtgSync) window.mtgSync.log("💥 renderDecks: decksData vacío", "err");
+    return;
+  }
   const f = norm(filter);
   const decks = decksData.decks
     .filter((d) => !f || norm(d.name).includes(f))
