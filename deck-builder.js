@@ -513,19 +513,29 @@ function pedidasText() {
 function renderPedidasList() {
   const entries = Object.entries(orders).sort((a, b) => a[0].localeCompare(b[0]));
   const totalCopies = entries.reduce((s, [, v]) => s + qtyOf(v), 0);
-  $("pedStatus").innerHTML = `${entries.length} cartas · ${totalCopies} copias pedidas`;
+  const need = neededAnywhere(); // carta -> mazos donde falta (aun no la tienen)
+  const huerfanas = entries.filter(([n]) => !need.has(n)).length;
+  $("pedStatus").innerHTML = `${entries.length} cartas · ${totalCopies} copias pedidas` +
+    (huerfanas ? ` · <span style="color:var(--warn)">⚠️ ${huerfanas} ya no faltan en ningún mazo</span>` : "");
   const wrap = $("pedidasList");
   if (!entries.length) {
     wrap.innerHTML = `<div class="empty"><div class="big">🛒</div><div>No hay cartas pedidas. En “Mis Mazos” → pestaña Faltan, selecciona cartas y pulsa “🛒 Pedidas”.</div></div>`;
     return;
   }
-  wrap.innerHTML = entries.map(([name, v]) => `
-    <div class="cm-row" data-card="${escapeHtml(name)}">
+  wrap.innerHTML = entries.map(([name, v]) => {
+    const decks = need.get(name) || [];
+    // Para qué mazo(s) es: los que la piden y todavía no la tienen.
+    const para = decks.length
+      ? `<div class="chips">${decks.map((d) => `<span class="chip">🗂️ ${escapeHtml(d)}</span>`).join("")}</div>`
+      : ` <span class="stale-badge">ya no falta en ningún mazo</span>`;
+    return `
+    <div class="cm-row${decks.length ? "" : " stale"}" data-card="${escapeHtml(name)}">
       ${cardImgTag(name)}
-      <div class="cm-name">${escapeHtml(name)}</div>
+      <div class="cm-name">${escapeHtml(name)}${para}</div>
       <div class="cm-qty">×${qtyOf(v)}</div>
       <button class="cm-x" data-name="${escapeHtml(name)}" title="Quitar">×</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
   wrap.querySelectorAll(".cm-x").forEach((b) => { b.onclick = () => { delete orders[b.dataset.name]; saveOrders(); renderPedidasList(); }; });
 }
 async function copyPedidasAll() {
