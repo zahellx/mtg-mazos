@@ -7,7 +7,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Escanear cartas</title>
-  <link rel="stylesheet" href="styles.css?v=60" />
+  <link rel="stylesheet" href="styles.css?v=61" />
 </head>
 <body>
   <header>
@@ -24,10 +24,11 @@
     <section id="scanView">
       <div class="cam-wrap">
         <video id="cam" playsinline muted></video>
-        <div class="cam-guide"><span>Encuadra el <b>nombre</b> de la carta aquí</span></div>
+        <div class="cam-guide-corner"><span>esquina ↙ (nº / edición)</span></div>
+        <div class="cam-guide-title"><span>nombre (plan B)</span></div>
       </div>
       <div class="cam-actions">
-        <button class="btn" id="shotBtn">📸 Escanear</button>
+        <button class="btn" id="shotBtn">⏸️ Pausar</button>
         <button class="btn secondary" id="camBtn" style="width:auto;white-space:nowrap">🔄 Cámara</button>
       </div>
       <div id="scanStatus" class="meta" style="text-align:center;margin-top:8px"></div>
@@ -70,9 +71,9 @@
     </div>
   </div>
 
-  <script src="img.js?v=60"></script>
-  <script src="card-modal.js?v=60"></script>
-  <script src="sync.js?v=60"></script>
-  <script src="escanear.js?v=60"></script>
+  <script src="img.js?v=61"></script>
+  <script src="card-modal.js?v=61"></script>
+  <script src="sync.js?v=61"></script>
+  <script src="escanear.js?v=61"></script>
 </body>
 </html>

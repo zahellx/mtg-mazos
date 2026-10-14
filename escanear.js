@@ -97,28 +97,58 @@ async function startCam() {
 function stopCam() { if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } }
 const status = (m) => { $("scanStatus").innerHTML = m; };
 
-// Recorta la franja del nombre (parte superior de la carta) y la prepara para OCR.
-function cropTitle() {
+// Recorta una zona de la imagen de la cámara y la prepara para el OCR.
+// rel = {x, y, w, h} en proporción (0-1) sobre el fotograma.
+function cropRegion(rel, umbral) {
   const v = $("cam");
   const W = v.videoWidth, H = v.videoHeight;
   if (!W) return null;
-  // La guía en pantalla cubre el 86% de ancho y una franja fina centrada arriba.
-  const w = Math.round(W * 0.86), h = Math.round(H * 0.11);
-  const x = Math.round((W - w) / 2), y = Math.round(H * 0.30);
+  const w = Math.round(W * rel.w), h = Math.round(H * rel.h);
+  const x = Math.round(W * rel.x), y = Math.round(H * rel.y);
   const c = document.createElement("canvas");
-  c.width = w * 2; c.height = h * 2; // escalar ayuda al OCR
+  c.width = w * 3; c.height = h * 3;           // ampliar ayuda mucho al OCR
   const ctx = c.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(v, x, y, w, h, 0, 0, c.width, c.height);
-  // Blanco y negro con contraste: el OCR mejora mucho.
-  const img = ctx.getImageData(0, 0, c.width, c.height);
-  const d = img.data;
+  // Blanco y negro con umbral automático (media de la zona).
+  const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
+  let suma = 0;
+  for (let i = 0; i < d.length; i += 4) suma += 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+  const media = suma / (d.length / 4);
+  const corte = umbral != null ? umbral : media * 0.95;
   for (let i = 0; i < d.length; i += 4) {
     const g = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
-    const v2 = g > 125 ? 255 : 0;
-    d[i] = d[i + 1] = d[i + 2] = v2;
+    d[i] = d[i + 1] = d[i + 2] = g > corte ? 255 : 0;
   }
   ctx.putImageData(img, 0, 0);
   return c;
+}
+
+// Zonas: esquina inferior izquierda (número/edición, igual en todos los idiomas)
+// y franja del nombre (plan B para cartas antiguas sin numeración).
+const ZONA_ESQUINA = { x: 0.08, y: 0.74, w: 0.42, h: 0.13 };
+const ZONA_TITULO  = { x: 0.07, y: 0.30, w: 0.86, h: 0.11 };
+
+// De "0123/0291 U / NEO • JA" saca {set:"neo", num:"123"}.
+function parseEsquina(texto) {
+  const up = (texto || "").toUpperCase();
+  const num = (up.match(/(\d{1,4})\s*[\/|]\s*\d{1,4}/) || [])[1];
+  let set = null;
+  const lineas = up.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  for (const l of lineas) {
+    const m = l.match(/\b([A-Z0-9]{3,5})\b/);
+    if (m && !/^\d+$/.test(m[1])) { set = m[1]; break; }
+  }
+  if (!num || !set) return null;
+  return { set: set.toLowerCase(), num: String(Number(num)) };
+}
+
+async function buscarPorEsquina(info) {
+  try {
+    const r = await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(info.set)}/${encodeURIComponent(info.num)}`);
+    if (r.ok) return await r.json();
+  } catch (_) {}
+  return null;
 }
 
 let worker = null;
@@ -136,23 +166,63 @@ async function getWorker() {
   return worker;
 }
 
-async function scan() {
-  const btn = $("shotBtn"); btn.disabled = true;
+let escaneando = false, cicloId = null, ultimoTexto = "";
+
+async function unCiclo() {
+  if (!escaneando) return;
   try {
-    const c = cropTitle();
-    if (!c) { status("❌ La cámara no está lista."); return; }
     const w = await getWorker();
-    status("🔎 Leyendo el nombre…");
-    const { data } = await w.recognize(c);
-    const texto = (data.text || "").split("\n").map((s) => s.trim()).filter(Boolean)[0] || "";
-    if (!texto) { status("No he leído nada. Acerca más el nombre y evita reflejos."); return; }
-    status(`Leído: <b>${esc(texto)}</b>`);
-    const cand = bestMatches(texto);
-    if (!cand.length) { status(`No reconozco “${esc(texto)}”. Pruébalo a mano abajo.`); return; }
-    showCandidates(cand);
-  } catch (err) {
-    status("❌ " + err.message);
-  } finally { btn.disabled = false; }
+    // 1) Esquina inferior izquierda: identificación exacta, valga el idioma que valga.
+    const ce = cropRegion(ZONA_ESQUINA);
+    if (ce) {
+      const { data } = await w.recognize(ce);
+      const txt = (data.text || "").trim();
+      const info = parseEsquina(txt);
+      if (info) {
+        status(`Leído <b>${esc(info.set.toUpperCase())} #${esc(info.num)}</b> · buscando…`);
+        const card = await buscarPorEsquina(info);
+        if (card) { acertado(card); return; }
+      } else if (txt && txt !== ultimoTexto) {
+        ultimoTexto = txt;
+        status(`Buscando el número de colección… (leo: ${esc(txt.replace(/\s+/g, " ").slice(0, 28))})`);
+      }
+    }
+    // 2) Plan B: el nombre (sirve para cartas antiguas sin numeración, en inglés).
+    const ct = cropRegion(ZONA_TITULO);
+    if (ct) {
+      const { data } = await w.recognize(ct);
+      const linea = (data.text || "").split("\n").map((t) => t.trim()).filter(Boolean)[0] || "";
+      const cand = bestMatches(linea, 3);
+      if (cand.length && cand[0].score > 0.82) {
+        pausar();
+        showCandidates(cand);
+        status("¿Es alguna de estas? Toca para confirmar.");
+        return;
+      }
+    }
+  } catch (err) { status("❌ " + err.message); }
+  if (escaneando) cicloId = setTimeout(unCiclo, 400);
+}
+
+function acertado(card) {
+  pausar();
+  if (navigator.vibrate) navigator.vibrate(60);
+  openCardObj(card);
+}
+
+function pausar() {
+  escaneando = false;
+  if (cicloId) { clearTimeout(cicloId); cicloId = null; }
+  $("shotBtn").textContent = "▶️ Seguir escaneando";
+}
+
+async function alternarEscaneo() {
+  if (escaneando) { pausar(); status("En pausa."); return; }
+  escaneando = true;
+  $("shotBtn").textContent = "⏸️ Pausar";
+  status("Escaneando… acerca la <b>esquina inferior izquierda</b> de la carta.");
+  await getWorker();
+  unCiclo();
 }
 
 // ── Resultados ────────────────────────────────────────────────────────────────
@@ -175,7 +245,12 @@ async function openCard(name) {
     if (r.ok) card = await r.json();
   } catch (_) {}
   if (!card) { $("results").innerHTML = `<div class="empty">❌ No pude cargar la carta.</div>`; return; }
+  openCardObj(card);
+}
+
+async function openCardObj(card) {
   await getFx();
+  status(`✅ ${esc(card.name)}`);
   renderCard(card);
   addPending(card.name);
 }
@@ -296,7 +371,7 @@ async function init() {
   loadNames();
   getFx().then(() => { if (pending.length) renderPending(); });
 
-  $("shotBtn").onclick = scan;
+  $("shotBtn").onclick = alternarEscaneo;
   $("camBtn").onclick = () => { useBack = !useBack; startCam(); };
   $("manualGo").onclick = () => {
     const t = $("manualName").value.trim();
@@ -311,8 +386,8 @@ async function init() {
   $("cmSave").onclick = savePreset;
   $("cmClearF").onclick = () => { if (confirm("¿Borrar todos los filtros guardados?")) { presets = []; save(PRESETS_KEY, presets); renderPresets(); } };
 
-  startCam();
-  document.addEventListener("visibilitychange", () => { if (document.hidden) stopCam(); });
+  startCam().then(() => alternarEscaneo());
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { pausar(); stopCam(); } });
 }
 
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
