@@ -106,7 +106,10 @@ function cropRegion(rel, umbral) {
   const w = Math.round(W * rel.w), h = Math.round(H * rel.h);
   const x = Math.round(W * rel.x), y = Math.round(H * rel.y);
   const c = document.createElement("canvas");
-  c.width = w * 3; c.height = h * 3;           // ampliar ayuda mucho al OCR
+  // Acotar el tamaño es clave para la velocidad: ~900px de ancho basta de sobra
+  // para leer dígitos. (Antes ampliaba x3 y el OCR tardaba una eternidad.)
+  const escala = Math.min(1.6, 900 / w);
+  c.width = Math.round(w * escala); c.height = Math.round(h * escala);
   const ctx = c.getContext("2d");
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(v, x, y, w, h, 0, 0, c.width, c.height);
@@ -168,36 +171,41 @@ async function getWorker() {
 
 let escaneando = false, cicloId = null, ultimoTexto = "";
 
+let vueltas = 0;
 async function unCiclo() {
   if (!escaneando) return;
+  vueltas++;
   try {
     const w = await getWorker();
-    // 1) Esquina inferior izquierda: identificación exacta, valga el idioma que valga.
+    // Ciclo rápido: SOLO la esquina (dígitos). Es lo que identifica exacto.
     const ce = cropRegion(ZONA_ESQUINA);
     if (ce) {
+      await w.setParameters({ tessedit_char_whitelist: "0123456789/ABCDEFGHIJKLMNOPQRSTUVWXYZ", tessedit_pageseg_mode: "6" });
       const { data } = await w.recognize(ce);
       const txt = (data.text || "").trim();
       const info = parseEsquina(txt);
       if (info) {
-        status(`Leído <b>${esc(info.set.toUpperCase())} #${esc(info.num)}</b> · buscando…`);
         const card = await buscarPorEsquina(info);
         if (card) { acertado(card); return; }
-      } else if (txt && txt !== ultimoTexto) {
-        ultimoTexto = txt;
-        status(`Buscando el número de colección… (leo: ${esc(txt.replace(/\s+/g, " ").slice(0, 28))})`);
+        status(`Leí ${esc(info.set.toUpperCase())} #${esc(info.num)} pero no cuadra; sigo…`);
+      } else if (txt) {
+        status(`Buscando el número… <span class="meta">(${esc(txt.replace(/\s+/g, " ").slice(0, 24))})</span>`);
       }
     }
-    // 2) Plan B: el nombre (sirve para cartas antiguas sin numeración, en inglés).
-    const ct = cropRegion(ZONA_TITULO);
-    if (ct) {
-      const { data } = await w.recognize(ct);
-      const linea = (data.text || "").split("\n").map((t) => t.trim()).filter(Boolean)[0] || "";
-      const cand = bestMatches(linea, 3);
-      if (cand.length && cand[0].score > 0.82) {
-        showCandidates(cand);
-        status("¿Es alguna de estas? Toca para confirmar.");
-        seguir();
-        return;
+    // Cada 4 vueltas, intento también por el nombre (cartas antiguas o en inglés).
+    if (vueltas % 4 === 0) {
+      const ct = cropRegion(ZONA_TITULO);
+      if (ct) {
+        await w.setParameters({ tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ,-", tessedit_pageseg_mode: "7" });
+        const { data } = await w.recognize(ct);
+        const linea = (data.text || "").split("\n").map((t) => t.trim()).filter(Boolean)[0] || "";
+        const cand = bestMatches(linea, 3);
+        if (cand.length && cand[0].score > 0.82) {
+          showCandidates(cand);
+          status("¿Es alguna de estas? Toca para confirmar.");
+          seguir();
+          return;
+        }
       }
     }
   } catch (err) { status("❌ " + err.message); }
@@ -218,7 +226,7 @@ function acertado(card) {
   seguir();  // NO se detiene: así puedes ir pasando cartas una tras otra
 }
 
-function seguir() { if (escaneando) cicloId = setTimeout(unCiclo, 700); }
+function seguir() { if (escaneando) cicloId = setTimeout(unCiclo, 120); }
 
 function flash() {
   const f = $("flash");
