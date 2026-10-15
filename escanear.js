@@ -175,6 +175,30 @@ function marcoCarta(v) {
 }
 
 let escaneando = false, cicloId = null;
+let ultimaId = null, ultimaTs = 0;   // para no apuntar dos veces la misma carta
+
+/** Reprograma el siguiente ciclo de escaneo. */
+function seguir(ms = 120) {
+  if (!escaneando) return;
+  if (cicloId) clearTimeout(cicloId);
+  cicloId = setTimeout(unCiclo, ms);
+}
+
+/** Carta reconocida: la enseña, la suma a la sesion y sigue escaneando. */
+async function acertado(card) {
+  // Si la misma carta sigue delante de la camara no la contamos otra vez;
+  // en el escaneo por foto (escaneando=false) siempre cuenta.
+  const repetida = escaneando && card.id === ultimaId && Date.now() - ultimaTs < 6000;
+  ultimaId = card.id; ultimaTs = Date.now();
+  await getFx();
+  status(`✅ ${esc(card.name)}`);
+  renderCard(card);
+  if (!repetida) {
+    addSesion(card);
+    try { navigator.vibrate && navigator.vibrate(inWishlist(card.name) ? [60, 40, 60] : 60); } catch (_) {}
+  }
+  seguir(900);   // margen para apartar la carta y poner la siguiente
+}
 
 async function unCiclo() {
   if (!escaneando) return;
@@ -253,7 +277,7 @@ async function openCardObj(card) {
   await getFx();
   status(`✅ ${esc(card.name)}`);
   renderCard(card);
-  addPending(card.name);
+  addSesion(card);
 }
 
 function cmLink(card, preset) {

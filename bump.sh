@@ -12,12 +12,13 @@ new=${1:-$((cur + 1))}
 sed -i "s/mtg-mazos-v[0-9]*/mtg-mazos-v${new}/" sw.js
 sed -i "s/const APP_VERSION = \"v[0-9]*\"/const APP_VERSION = \"v${new}\"/" sync.js
 # ?v=N en los assets del HTML: obliga al navegador a pedir URLs nuevas.
-for f in index.html deck-builder.html; do
-  sed -i -E 's#(href="styles\.css)(\?v=[0-9]+)?"#\1?v='"${new}"'"#' "$f"
-  sed -i -E 's#(src="(img|card-modal|sync|app|deck-builder)\.js)(\?v=[0-9]+)?"#\1?v='"${new}"'"#g' "$f"
+# Cualquier .js/.css local referenciado en cualquier HTML, para no olvidarse
+# de ninguna pagina al anadir una nueva (paso con escanear.html).
+for f in *.html; do
+  sed -i -E 's#((href|src)="[a-zA-Z0-9_-]+\.(css|js))(\?v=[0-9]+)?"#\1?v='"${new}"'"#g' "$f"
 done
 
 echo "Versión $cur -> $new"
 grep -o 'mtg-mazos-v[0-9]*' sw.js | head -1
 grep -o 'APP_VERSION = "v[0-9]*"' sync.js
-grep -o 'src="[a-z-]*\.js?v=[0-9]*"' index.html | head -4
+echo "HTML apuntando a: $(grep -ho '?v=[0-9]*' ./*.html | sort -u | tr '\n' ' ')"
