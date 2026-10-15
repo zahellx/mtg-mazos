@@ -2,7 +2,8 @@
 // El precio que mostramos es la referencia de Scryfall (tendencia Cardmarket).
 // El precio real por idioma/estado solo está en Cardmarket: por eso los botones
 // rápidos abren la carta allí con TUS filtros ya aplicados.
-const CARDMARKET_KEY = "mtg-cardmarket-v1";   // wishlist: {nombre: qty | {q, eur}}
+const CARDMARKET_KEY = "mtg-cardmarket-v1";   // lista de Cardmarket (compartida con Deck Builder)
+const DESEADOS_KEY = "mtg-deseados-v1";       // deseados: {nombre: {eur: precio máximo}}
 const PRESETS_KEY = "mtg-scan-presets-v1";    // botones rápidos de filtros
 const PENDING_KEY = "mtg-scan-pending-v1";    // lista de pendientes escaneadas
 const FX_KEY = "mtg-fx-v1";                   // cambio EUR->JPY cacheado
@@ -14,6 +15,7 @@ const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; 
 const save = (k, v) => { localStorage.setItem(k, JSON.stringify(v)); if (window.mtgSync) window.mtgSync.afterImport(); };
 
 let cardmarket = load(CARDMARKET_KEY, {});
+let deseados = load(DESEADOS_KEY, {});
 let presets = load(PRESETS_KEY, []);
 let pending = load(PENDING_KEY, []);
 let names = [];           // catálogo de nombres
@@ -23,6 +25,10 @@ let fx = load(FX_KEY, null);
 const wishQty = (v) => (typeof v === "object" && v ? (v.q || 1) : (typeof v === "number" ? v : 1));
 const wishEur = (v) => (typeof v === "object" && v && v.eur ? Number(v.eur) : null);
 const inWishlist = (name) => cardmarket[name] != null;
+const enDeseados = (name) => deseados[name] != null;
+const topeDeseado = (name) => (deseados[name] && deseados[name].eur != null ? Number(deseados[name].eur) : null);
+/** ¿La carta está en alguna de las dos listas? */
+const enAlgunaLista = (name) => inWishlist(name) || enDeseados(name);
 
 // ── Dinero ────────────────────────────────────────────────────────────────────
 async function getFx() {
@@ -378,7 +384,7 @@ async function acertado(card) {
   renderCard(card);
   if (!repetida) {
     addSesion(card);
-    try { navigator.vibrate && navigator.vibrate(inWishlist(card.name) ? [60, 40, 60] : 60); } catch (_) {}
+    try { navigator.vibrate && navigator.vibrate(enAlgunaLista(card.name) ? [60, 40, 60] : 60); } catch (_) {}
   }
   seguir(900);   // margen para apartar la carta y poner la siguiente
 }
@@ -468,11 +474,20 @@ function showCandidates(cand) {
   $("detail").innerHTML = `<div class="section-h">¿Cuál es?</div>` + cand.map((c) => `
     <div class="cm-row" data-pick="${esc(c.name)}">
       <img loading="lazy" data-name="${esc(c.name)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(c.name)}" />
-      <div class="cm-name">${esc(c.name)}${inWishlist(c.name) ? ' <span class="cm-badge">⭐ en tu lista</span>' : ""}</div>
+      <div class="cm-name">${esc(c.name)}${etiquetasLista(c.name)}</div>
       <div class="cm-qty">${Math.round(c.score * 100)}%</div>
     </div>`).join("");
   if (window.mtgImg) window.mtgImg.load($("detail"));
   $("detail").querySelectorAll("[data-pick]").forEach((el) => { el.onclick = () => openCard(el.dataset.pick); });
+}
+
+/** Trae una carta de Scryfall por nombre exacto. */
+async function traerCarta(name) {
+  try {
+    const r = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`);
+    if (r.ok) return await r.json();
+  } catch (_) {}
+  return null;
 }
 
 async function openCard(name) {
@@ -504,29 +519,39 @@ function cmLink(card, preset) {
   return u.toString();
 }
 
-function renderCard(card) {
+function renderCard(card, caja) {
+  caja = caja || $("detail");
   const precio = card.prices && card.prices.eur ? Number(card.prices.eur) : null;
   const precioFoil = card.prices && card.prices.eur_foil ? Number(card.prices.eur_foil) : null;
   const w = cardmarket[card.name];
   const objetivo = wishEur(w);
+  const tope = topeDeseado(card.name);
   const img = (card.image_uris && card.image_uris.normal) || (card.card_faces && card.card_faces[0].image_uris && card.card_faces[0].image_uris.normal) || "";
 
-  const aviso = w != null ? `
+  const veredicto = (lim) => (lim == null || precio == null) ? "" : `
+    <div class="wish-verdict ${precio <= lim ? "good" : "bad"}">
+      ${precio <= lim ? "✅ La referencia está por debajo de tu precio" : "⚠️ La referencia está por encima de tu precio"}
+    </div>`;
+  const aviso = (w != null ? `
     <div class="wish-alert">
-      <div class="wish-title">⭐ ¡Está en tu lista de Cardmarket!</div>
+      <div class="wish-title">📋 ¡Está en tu lista de Cardmarket!</div>
       <div>Quieres <b>${wishQty(w)}</b> copia(s)${objetivo != null
         ? ` · tu precio objetivo: <b>${eur(objetivo)}</b> <span class="yen">${yen(objetivo)}</span>` : " · sin precio objetivo puesto"}</div>
-      ${objetivo != null && precio != null ? `<div class="wish-verdict ${precio <= objetivo ? "good" : "bad"}">
-        ${precio <= objetivo ? "✅ La referencia está por debajo de tu objetivo" : "⚠️ La referencia está por encima de tu objetivo"}
-      </div>` : ""}
-    </div>` : "";
+      ${veredicto(objetivo)}
+    </div>` : "") + (tope != null || enDeseados(card.name) ? `
+    <div class="wish-alert">
+      <div class="wish-title">💚 ¡Está en tus deseados!</div>
+      <div>${tope != null
+        ? `Pagas como mucho <b>${eur(tope)}</b> <span class="yen">${yen(tope)}</span>` : "Sin precio máximo puesto"}</div>
+      ${veredicto(tope)}
+    </div>` : "");
 
   const botones = presets.length
     ? presets.map((p, i) => `<a class="btn cm-quick" href="${esc(cmLink(card, p))}" target="_blank" rel="noopener">🛒 ${esc(p.name)}</a>`).join("")
     : `<a class="btn" href="${esc(cmLink(card, null))}" target="_blank" rel="noopener">🛒 Ver en Cardmarket</a>
        <div class="note">Configura tus filtros con el ⚙️ para tener botones rápidos.</div>`;
 
-  $("detail").innerHTML = `
+  caja.innerHTML = `
     ${aviso}
     <div class="scan-card">
       ${img ? `<img class="scan-img" src="${img}" alt="${esc(card.name)}" />` : ""}
@@ -540,13 +565,32 @@ function renderCard(card) {
     </div>
     <div class="cm-quick-wrap">${botones}</div>
     <div class="cm-actions" style="margin-top:10px">
-      <button class="btn secondary" id="addWish">${w != null ? "⭐ Ya está en tu lista" : "➕ Añadir a mi lista"}</button>
-      <a class="btn secondary" style="text-decoration:none;text-align:center" href="${esc(card.scryfall_uri || "#")}" target="_blank" rel="noopener">🔎 Scryfall</a>
+      <button class="btn secondary js-addCM">${w != null ? "📋 Ya está en Cardmarket" : "📋 A Cardmarket"}</button>
+      <button class="btn secondary js-addDes">${enDeseados(card.name) ? "💚 Ya está en deseados" : "💚 A deseados"}</button>
+      <a class="btn secondary" style="text-decoration:none;text-align:center" href="${esc(card.scryfall_uri || "#")}" target="_blank" rel="noopener">🔎</a>
     </div>`;
-  const aw = $("addWish");
-  if (aw) aw.onclick = () => {
-    if (cardmarket[card.name] == null) { cardmarket[card.name] = 1; save(CARDMARKET_KEY, cardmarket); renderCard(card); }
+  const cm = caja.querySelector(".js-addCM");
+  if (cm) cm.onclick = () => {
+    if (cardmarket[card.name] == null) { cardmarket[card.name] = 1; save(CARDMARKET_KEY, cardmarket); renderCard(card, caja); renderPending(); }
   };
+  const des = caja.querySelector(".js-addDes");
+  if (des) des.onclick = () => {
+    if (enDeseados(card.name)) return;
+    const t = prompt(`Precio máximo que quieres pagar por ${card.name} (€):`, precio != null ? precio.toFixed(2) : "");
+    if (t === null) return;
+    const v = Number(String(t).replace(",", "."));
+    deseados[card.name] = { eur: isFinite(v) && v > 0 ? v : null };
+    save(DESEADOS_KEY, deseados);
+    renderCard(card, caja);
+    renderPending();
+    renderDeseados();
+  };
+}
+
+/** Marca de las listas en las que está la carta. */
+function etiquetasLista(name) {
+  return (inWishlist(name) ? ' <span class="cm-badge">📋</span>' : "")
+       + (enDeseados(name) ? ` <span class="cm-badge des">💚${topeDeseado(name) != null ? " " + eur(topeDeseado(name)) : ""}</span>` : "");
 }
 
 // ── Sesión de escaneo (se acumula, como el montón de cartas) ─────────────────
@@ -568,16 +612,32 @@ function renderPending() {
   $("sessionTotal").innerHTML = n ? `${eur(total)} <span class="yen">${yen(total)}</span>` : "";
   $("sessionActions").style.display = n ? "flex" : "none";
   $("session").innerHTML = pending.map((p, i) => `
-    <div class="cm-row" data-pick="${esc(p.name)}">
-      <img loading="lazy" data-name="${esc(p.name)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(p.name)}" />
-      <div class="cm-name">${esc(p.name)}${inWishlist(p.name) ? ' <span class="cm-badge">⭐</span>' : ""}
-        <div class="note">${esc(p.set)} ${esc(p.num)}</div></div>
-      <div class="cm-qty">${p.eur != null ? eur(p.eur) : "—"}<div class="yen">${p.eur != null ? yen(p.eur) : ""}</div></div>
-      <button class="cm-x" data-del="${i}" title="Quitar">×</button>
+    <div class="ses-item">
+      <div class="cm-row" data-pick="${esc(p.name)}" data-i="${i}">
+        <img loading="lazy" data-name="${esc(p.name)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(p.name)}" />
+        <div class="cm-name">${esc(p.name)}${etiquetasLista(p.name)}
+          <div class="note">${esc(p.set)} ${esc(p.num)}</div></div>
+        <div class="cm-qty">${p.eur != null ? eur(p.eur) : "—"}<div class="yen">${p.eur != null ? yen(p.eur) : ""}</div></div>
+        <button class="cm-x" data-del="${i}" title="Quitar">×</button>
+      </div>
+      <div class="ses-detalle hidden" data-detalle="${i}"></div>
     </div>`).join("");
   if (window.mtgImg) window.mtgImg.load($("session"));
   $("session").querySelectorAll("[data-pick]").forEach((el) => {
-    el.onclick = (e) => { if (e.target.dataset.del !== undefined) return; openCard(el.dataset.pick); };
+    el.onclick = async (e) => {
+      if (e.target.dataset.del !== undefined) return;
+      // La ficha se abre aquí mismo, no arriba: así no parece que se haya
+      // vuelto a escanear y no pierdes de vista el resto de la sesión.
+      const caja = $("session").querySelector(`[data-detalle="${el.dataset.i}"]`);
+      if (!caja) return;
+      if (!caja.classList.contains("hidden")) { caja.classList.add("hidden"); return; }
+      caja.classList.remove("hidden");
+      caja.innerHTML = `<div class="empty">⏳ Cargando…</div>`;
+      const card = await traerCarta(el.dataset.pick);
+      if (!card) { caja.innerHTML = `<div class="empty">❌ No pude cargar la carta.</div>`; return; }
+      await getFx();
+      renderCard(card, caja);
+    };
   });
   $("session").querySelectorAll("[data-del]").forEach((b) => {
     b.onclick = (e) => { e.stopPropagation(); pending.splice(+b.dataset.del, 1); save(PENDING_KEY, pending); renderPending(); };
@@ -585,6 +645,53 @@ function renderPending() {
 }
 
 // ── Ajustes: presets de filtros de Cardmarket ─────────────────────────────────
+/** Lista de deseados: carta + precio máximo que quieres pagar. */
+function renderDeseados() {
+  const caja = $("desList");
+  if (!caja) return;
+  const nombres = Object.keys(deseados).sort((a, b) => a.localeCompare(b));
+  $("desCount").textContent = nombres.length ? `${nombres.length} carta(s)` : "Vacía";
+  caja.innerHTML = nombres.length ? nombres.map((n) => {
+    const t = topeDeseado(n);
+    return `<div class="cm-row">
+      <img loading="lazy" data-name="${esc(n)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(n)}" />
+      <div class="cm-name">${esc(n)}</div>
+      <div class="cm-qty"><button class="btn secondary js-precio" data-n="${esc(n)}" style="width:auto;padding:4px 8px;font-size:13px">
+        ${t != null ? eur(t) : "sin tope"}</button>
+        <div class="yen">${t != null ? yen(t) : ""}</div></div>
+      <button class="cm-x" data-desdel="${esc(n)}" title="Quitar">×</button>
+    </div>`;
+  }).join("") : `<div class="empty">Nada en deseados todavía. Añade cartas desde su ficha o aquí abajo.</div>`;
+  if (window.mtgImg) window.mtgImg.load(caja);
+  caja.querySelectorAll(".js-precio").forEach((b) => {
+    b.onclick = () => {
+      const n = b.dataset.n, t = topeDeseado(n);
+      const v = prompt(`Precio máximo por ${n} (€):`, t != null ? String(t) : "");
+      if (v === null) return;
+      const num = Number(String(v).replace(",", "."));
+      deseados[n] = { eur: isFinite(num) && num > 0 ? num : null };
+      save(DESEADOS_KEY, deseados); renderDeseados(); renderPending();
+    };
+  });
+  caja.querySelectorAll("[data-desdel]").forEach((b) => {
+    b.onclick = () => { delete deseados[b.dataset.desdel]; save(DESEADOS_KEY, deseados); renderDeseados(); renderPending(); };
+  });
+}
+
+function anadirDeseado() {
+  const t = $("desName").value.trim();
+  if (!t) return;
+  // Si no es un nombre exacto, lo corregimos con el catálogo de Scryfall.
+  const cand = bestMatches(t, 1);
+  const nombre = cand.length && cand[0].score > 0.72 ? cand[0].name : t;
+  const v = $("desPrice").value.trim();
+  const num = Number(v.replace(",", "."));
+  deseados[nombre] = { eur: v && isFinite(num) && num > 0 ? num : null };
+  save(DESEADOS_KEY, deseados);
+  $("desName").value = ""; $("desPrice").value = "";
+  renderDeseados(); renderPending();
+}
+
 function renderPresets() {
   const info = $("cmInfo");
   info.innerHTML = presets.length
@@ -669,6 +776,7 @@ async function escanearImagen(file) {
 // ── Arranque ──────────────────────────────────────────────────────────────────
 async function init() {
   renderPending();
+  renderDeseados();
   renderPresets();
   loadNames();
   getFx().then(() => { if (pending.length) renderPending(); });
@@ -706,6 +814,17 @@ async function init() {
   };
   $("manualName").onkeydown = (e) => { if (e.key === "Enter") $("manualGo").click(); };
 
+  $("desBtn").onclick = () => { $("scanView").classList.add("hidden"); $("desView").classList.remove("hidden"); stopCam(); renderDeseados(); };
+  $("desBack").onclick = () => { $("desView").classList.add("hidden"); $("scanView").classList.remove("hidden"); startCam(); };
+  $("desAdd").onclick = anadirDeseado;
+  $("desName").onkeydown = (e) => { if (e.key === "Enter") anadirDeseado(); };
+  $("desPrice").onkeydown = (e) => { if (e.key === "Enter") anadirDeseado(); };
+  $("sesDes").onclick = () => {
+    let n = 0;
+    pending.forEach((p) => { if (!enDeseados(p.name)) { deseados[p.name] = { eur: null }; n++; } });
+    save(DESEADOS_KEY, deseados); renderPending(); renderDeseados();
+    alert(n ? `💚 ${n} carta(s) a deseados. Ponles precio máximo desde 💚 arriba.` : "Ya estaban todas en deseados.");
+  };
   $("cfgBtn").onclick = () => { $("scanView").classList.add("hidden"); $("cfgView").classList.remove("hidden"); stopCam(); };
   $("cfgBack").onclick = () => { $("cfgView").classList.add("hidden"); $("scanView").classList.remove("hidden"); startCam(); };
   $("cmSave").onclick = savePreset;

@@ -7,13 +7,14 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Escanear cartas</title>
-  <link rel="stylesheet" href="styles.css?v=67" />
+  <link rel="stylesheet" href="styles.css?v=68" />
 </head>
 <body>
   <header>
     <div class="h-row">
       <a class="back-btn" href="index.html" style="text-decoration:none">‹ Mazos</a>
       <h1 id="title">📷 Escanear</h1>
+      <button class="back-btn" id="desBtn" title="Lista de deseados">💚</button>
       <button class="back-btn" id="cfgBtn" title="Filtros de Cardmarket">⚙️</button>
     </div>
     <div class="meta" id="syncMeta"></div>
@@ -37,8 +38,6 @@
       </div>
       <div id="scanStatus" class="meta" style="text-align:center;margin-top:8px"></div>
 
-      <div id="wishBanner"></div>
-
       <div class="filters" style="margin-top:12px">
         <input type="search" id="manualName" placeholder="…o escribe el nombre a mano" />
         <button class="btn secondary" id="manualGo" style="width:auto">🔎</button>
@@ -53,11 +52,31 @@
         </div>
         <div class="cm-actions" id="sessionActions" style="display:none">
           <button class="btn secondary" id="sesCopy">📋 Copiar</button>
-          <button class="btn secondary" id="sesWish">⭐ A mi lista</button>
+          <button class="btn secondary" id="sesWish">📋 A Cardmarket</button>
+          <button class="btn secondary" id="sesDes">💚 A deseados</button>
           <button class="btn secondary" id="sesClear" style="width:auto">🗑️</button>
         </div>
         <div id="session"></div>
       </div>
+    </section>
+
+    <!-- Lista de deseados -->
+    <section id="desView" class="hidden">
+      <div class="collection-bar">
+        <div class="title">💚 Lista de deseados</div>
+        <p class="note" style="margin-top:0">
+          Cartas que buscas, con el precio máximo que quieres pagar. Al escanear
+          una que esté aquí (o en tu lista de Cardmarket) te aviso en la ficha.
+        </p>
+        <div class="filters" style="margin-top:8px">
+          <input type="search" id="desName" placeholder="Nombre de la carta" />
+          <input type="number" id="desPrice" class="mini-input" placeholder="€ máx" min="0" step="0.5" inputmode="decimal" style="width:92px" />
+          <button class="btn secondary" id="desAdd" style="width:auto">➕</button>
+        </div>
+        <div id="desCount" class="meta" style="margin-top:8px"></div>
+      </div>
+      <div id="desList"></div>
+      <button class="btn secondary" id="desBack" style="margin-top:12px">‹ Volver a escanear</button>
     </section>
 
     <!-- Ajustes de filtros -->
@@ -78,9 +97,9 @@
     </section>
   </main>
 
-  <script src="deteccion.js?v=67"></script>
-  <script src="img.js?v=67"></script>
-  <script src="sync.js?v=67"></script>
-  <script src="escanear.js?v=67"></script>
+  <script src="deteccion.js?v=68"></script>
+  <script src="img.js?v=68"></script>
+  <script src="sync.js?v=68"></script>
+  <script src="escanear.js?v=68"></script>
 </body>
 </html>

@@ -295,6 +295,11 @@ a { color: var(--accent); }
 .cam-lupa { position: absolute; right: 8px; bottom: 8px; width: 96px; height: 68px;
   border: 1px solid rgba(255,255,255,.55); border-radius: 6px; background: #000; opacity: .92; }
 .cam-actions { display: flex; gap: 8px; margin-top: 12px; }
+/* La ficha se abre debajo de su carta, dentro de la lista. */
+.ses-item { border-bottom: 1px solid var(--border); }
+.ses-item:last-child { border-bottom: 0; }
+.ses-detalle { padding: 0 6px 12px; background: rgba(255,255,255,.02); }
+.cm-badge.des { background: rgba(62,207,142,.18); color: var(--ok); }
 
 .scan-card { display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 12px; }
 .scan-img { width: 110px; border-radius: 8px; flex-shrink: 0; }
