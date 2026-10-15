@@ -48,14 +48,20 @@ jobs:
         run: |
           curl -s "https://zahellx.github.io/${GITHUB_REPOSITORY#*/}/data/decks-data.json" -o /tmp/live.json || echo '{}' > /tmp/live.json
           curl -s "https://zahellx.github.io/${GITHUB_REPOSITORY#*/}/sw.js" -o /tmp/live-sw.js || true
+          # Tamano de las huellas publicadas (red de seguridad por si el Action
+          # de huellas las guardo en el repo pero no llegaron a publicarse).
+          echo "$(curl -sI "https://zahellx.github.io/${GITHUB_REPOSITORY#*/}/data/art-hashes.bin" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}')" > /tmp/live-art-size
           node -e "
             const fs = require('fs');
             const strip = (p) => { try { const o = JSON.parse(fs.readFileSync(p, 'utf8')); delete o.generatedAt; return JSON.stringify(o); } catch { return ''; } };
             const ver = (p) => { try { return (fs.readFileSync(p, 'utf8').match(/mtg-mazos-v\d+/) || [''])[0]; } catch { return ''; } };
             const decksChanged = strip('data/decks-data.json') !== strip('/tmp/live.json');
             const codeChanged = ver('sw.js') !== ver('/tmp/live-sw.js');
-            const changed = decksChanged || codeChanged;
-            console.log('decksChanged =', decksChanged, '| codeChanged =', codeChanged);
+            const tam = (p) => { try { return String(fs.statSync(p).size); } catch { return '0'; } };
+            const vivo = (fs.existsSync('/tmp/live-art-size') ? fs.readFileSync('/tmp/live-art-size', 'utf8') : '').trim();
+            const artChanged = tam('data/art-hashes.bin') !== '0' && tam('data/art-hashes.bin') !== vivo;
+            const changed = decksChanged || codeChanged || artChanged;
+            console.log('decksChanged =', decksChanged, '| codeChanged =', codeChanged, '| artChanged =', artChanged);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, 'changed=' + changed + '\n');
           "
 

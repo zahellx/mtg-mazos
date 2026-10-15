@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: "art-hashes"
@@ -15,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      cambios: ${{ steps.publicar.outputs.cambios }}
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
@@ -26,11 +30,41 @@ jobs:
         env:
           CONCURRENCIA: "10"
         run: node build-art-hashes.js
-      - name: Publicar en el repo
+      - name: Guardar en el repo
+        id: publicar
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/art-hashes.bin data/art-index.txt
-          if git diff --cached --quiet; then echo "Sin cambios"; exit 0; fi
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+            echo "cambios=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git commit -m "Huellas de ilustraciones actualizadas"
           git push
+          echo "cambios=true" >> "$GITHUB_OUTPUT"
+
+  # El push de arriba lo hace GITHUB_TOKEN, y GitHub no dispara workflows con
+  # esos pushes (anti-bucle). Asi que publicamos en Pages aqui mismo; si no,
+  # las huellas se quedaban en el repo pero no en la web.
+  deploy:
+    needs: build
+    if: needs.build.outputs.cambios == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main   # para coger el commit de huellas recien hecho
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+      - id: deploy
+        uses: actions/deploy-pages@v4
