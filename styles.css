@@ -282,10 +282,12 @@ a { color: var(--accent); }
 /* ── Escáner de cartas ── */
 .cam-wrap { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 3/4; max-height: 52vh; margin: 0 auto; }
 .cam-wrap video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cam-guide-corner, .cam-guide-title { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
-.cam-guide-corner { left: 8%; top: 74%; width: 42%; height: 13%; border: 2px solid var(--ok); box-shadow: 0 0 0 9999px rgba(0,0,0,.30); }
-.cam-guide-title { left: 7%; top: 30%; width: 86%; height: 11%; border: 1px dashed rgba(108,140,255,.75); }
-.cam-guide-corner span, .cam-guide-title span { font-size: 10.5px; color: #fff; background: rgba(0,0,0,.65); padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+/* Marco con forma de carta: al encuadrarla sé dónde cae la ilustración. */
+.cam-card-guide { position: absolute; top: 14%; height: 72%; aspect-ratio: 0.716; left: 50%; transform: translateX(-50%);
+  border: 2px solid var(--accent); border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.30); }
+.cam-art-guide { position: absolute; left: 7.9%; top: 11.2%; width: 84.2%; height: 42.4%;
+  border: 1px dashed rgba(62,207,142,.9); border-radius: 4px; display: flex; align-items: flex-end; justify-content: center; }
+.cam-art-guide span { font-size: 10px; color: #fff; background: rgba(0,0,0,.6); padding: 1px 6px; border-radius: 999px; margin-bottom: 3px; }
 .cam-actions { display: flex; gap: 8px; margin-top: 12px; }
 
 .scan-card { display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 12px; }

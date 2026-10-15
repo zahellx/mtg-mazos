@@ -1,0 +1,36 @@
+name: Generar huellas de ilustraciones
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 1 * *"   # una vez al mes (salen cartas nuevas)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: "art-hashes"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install sharp --no-audit --no-fund
+      - name: Calcular huellas (tarda ~1-2 h)
+        env:
+          CONCURRENCIA: "10"
+        run: node build-art-hashes.js
+      - name: Publicar en el repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/art-hashes.bin data/art-index.txt
+          if git diff --cached --quiet; then echo "Sin cambios"; exit 0; fi
+          git commit -m "Huellas de ilustraciones actualizadas"
+          git push

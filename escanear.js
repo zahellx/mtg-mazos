@@ -85,172 +85,130 @@ async function startCam() {
   stopCam();
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: useBack ? { ideal: "environment" } : "user", width: { ideal: 1920 } },
+      video: { facingMode: useBack ? { ideal: "environment" } : "user", width: { ideal: 1280 } },
     });
     $("cam").srcObject = stream;
     await $("cam").play();
-    status("Cámara lista. Encuadra el nombre y pulsa Escanear.");
   } catch (err) {
-    status("❌ No pude abrir la cámara: " + err.message + ". Usa el buscador de abajo.");
+    status("❌ No pude abrir la cámara: " + err.message + ". Usa 📁 o el buscador.");
   }
 }
 function stopCam() { if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } }
 const status = (m) => { $("scanStatus").innerHTML = m; };
 
-// Recorta una zona de la imagen de la cámara y la prepara para el OCR.
-// rel = {x, y, w, h} en proporción (0-1) sobre el fotograma.
-function cropRegion(rel, umbral) {
-  const v = $("cam");
+// ── Reconocimiento por ILUSTRACIÓN (huella de imagen) ─────────────────────────
+// Comparamos la huella de lo que ve la cámara con las de todas las cartas.
+// No lee texto: funciona igual en japonés, inglés o lo que sea.
+let HASHES = null;   // Uint32Array (2 por carta)
+let INDEX = null;    // ["nombre|set|num", ...]
+let cargandoBD = null;
+
+function cargarBD() {
+  if (cargandoBD) return cargandoBD;
+  cargandoBD = (async () => {
+    status("Cargando el reconocedor… (solo la primera vez)");
+    const [b, t] = await Promise.all([
+      fetch("data/art-hashes.bin").then((r) => { if (!r.ok) throw new Error("faltan las huellas"); return r.arrayBuffer(); }),
+      fetch("data/art-index.txt").then((r) => r.text()),
+    ]);
+    const dv = new DataView(b);
+    const n = Math.floor(b.byteLength / 8);
+    HASHES = new Uint32Array(n * 2);
+    for (let i = 0; i < n; i++) { HASHES[i * 2] = dv.getUint32(i * 8); HASHES[i * 2 + 1] = dv.getUint32(i * 8 + 4); }
+    INDEX = t.split("\n");
+    status(`Reconocedor listo: ${n.toLocaleString("es-ES")} ilustraciones.`);
+    return n;
+  })().catch((e) => { cargandoBD = null; status("❌ " + e.message + " — lanza el proceso de huellas en GitHub."); throw e; });
+  return cargandoBD;
+}
+
+const popcount = (x) => { x -= (x >> 1) & 0x55555555; x = (x & 0x33333333) + ((x >> 2) & 0x33333333); x = (x + (x >> 4)) & 0x0f0f0f0f; return (x * 0x01010101) >> 24; };
+
+// Proporciones de la ilustración dentro de una carta (marco moderno).
+const ARTE = { x: 0.079, y: 0.112, w: 0.842, h: 0.424 };
+
+const lienzo9 = document.createElement("canvas"); lienzo9.width = 9; lienzo9.height = 8;
+const lienzoMed = document.createElement("canvas"); lienzoMed.width = 36; lienzoMed.height = 32;
+
+/** Huella de 64 bits de una región, igual que la calculada en el servidor. */
+function huella(fuente, sx, sy, sw, sh) {
+  // Reducir en dos pasos da una miniatura más fiel (y la huella coincide mejor).
+  const m = lienzoMed.getContext("2d", { willReadFrequently: true });
+  m.imageSmoothingEnabled = true; m.imageSmoothingQuality = "high";
+  m.drawImage(fuente, sx, sy, sw, sh, 0, 0, 36, 32);
+  const c = lienzo9.getContext("2d", { willReadFrequently: true });
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+  c.drawImage(lienzoMed, 0, 0, 36, 32, 0, 0, 9, 8);
+  const d = c.getImageData(0, 0, 9, 8).data;
+  const h = new Uint32Array(2);
+  let bit = 0;
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      const i1 = (y * 9 + x) * 4, i2 = (y * 9 + x + 1) * 4;
+      const g1 = 0.299 * d[i1] + 0.587 * d[i1 + 1] + 0.114 * d[i1 + 2];
+      const g2 = 0.299 * d[i2] + 0.587 * d[i2 + 1] + 0.114 * d[i2 + 2];
+      if (g1 > g2) h[bit >> 5] |= 1 << (31 - (bit & 31));
+      bit++;
+    }
+  }
+  return h;
+}
+
+/** Busca la carta más parecida. Devuelve {i, dist} o null. */
+function buscarHuella(h) {
+  if (!HASHES) return null;
+  const a = h[0], b = h[1];
+  let mejor = 99, idx = -1, segundo = 99;
+  for (let i = 0; i < HASHES.length; i += 2) {
+    const d = popcount(HASHES[i] ^ a) + popcount(HASHES[i + 1] ^ b);
+    if (d < mejor) { segundo = mejor; mejor = d; idx = i >> 1; }
+    else if (d < segundo) segundo = d;
+  }
+  return idx < 0 ? null : { i: idx, dist: mejor, margen: segundo - mejor };
+}
+
+/** La guía dibujada en pantalla, en coordenadas del vídeo. */
+function marcoCarta(v) {
   const W = v.videoWidth, H = v.videoHeight;
-  if (!W) return null;
-  const w = Math.round(W * rel.w), h = Math.round(H * rel.h);
-  const x = Math.round(W * rel.x), y = Math.round(H * rel.y);
-  const c = document.createElement("canvas");
-  // Acotar el tamaño es clave para la velocidad: ~900px de ancho basta de sobra
-  // para leer dígitos. (Antes ampliaba x3 y el OCR tardaba una eternidad.)
-  const escala = Math.min(1.6, 900 / w);
-  c.width = Math.round(w * escala); c.height = Math.round(h * escala);
-  const ctx = c.getContext("2d");
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(v, x, y, w, h, 0, 0, c.width, c.height);
-  // Blanco y negro con umbral automático (media de la zona).
-  const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
-  let suma = 0;
-  for (let i = 0; i < d.length; i += 4) suma += 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
-  const media = suma / (d.length / 4);
-  const corte = umbral != null ? umbral : media * 0.95;
-  for (let i = 0; i < d.length; i += 4) {
-    const g = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
-    d[i] = d[i + 1] = d[i + 2] = g > corte ? 255 : 0;
-  }
-  ctx.putImageData(img, 0, 0);
-  return c;
+  const h = H * 0.72, w = h * 0.716;          // proporción de una carta real
+  return { x: (W - w) / 2, y: (H - h) / 2, w, h };
 }
 
-// Zonas: esquina inferior izquierda (número/edición, igual en todos los idiomas)
-// y franja del nombre (plan B para cartas antiguas sin numeración).
-const ZONA_ESQUINA = { x: 0.08, y: 0.74, w: 0.42, h: 0.13 };
-const ZONA_TITULO  = { x: 0.07, y: 0.30, w: 0.86, h: 0.11 };
+let escaneando = false, cicloId = null;
 
-// De "0123/0291 U / NEO • JA" saca {set:"neo", num:"123"}.
-function parseEsquina(texto) {
-  const up = (texto || "").toUpperCase();
-  const num = (up.match(/(\d{1,4})\s*[\/|]\s*\d{1,4}/) || [])[1];
-  let set = null;
-  const lineas = up.split(/\n/).map((l) => l.trim()).filter(Boolean);
-  for (const l of lineas) {
-    const m = l.match(/\b([A-Z0-9]{3,5})\b/);
-    if (m && !/^\d+$/.test(m[1])) { set = m[1]; break; }
-  }
-  if (!num || !set) return null;
-  return { set: set.toLowerCase(), num: String(Number(num)) };
-}
-
-async function buscarPorEsquina(info) {
-  try {
-    const r = await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(info.set)}/${encodeURIComponent(info.num)}`);
-    if (r.ok) return await r.json();
-  } catch (_) {}
-  return null;
-}
-
-let worker = null;
-async function getWorker() {
-  if (worker) return worker;
-  status("Descargando el reconocimiento de texto… (solo la primera vez)");
-  await new Promise((res, rej) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-    s.onload = res; s.onerror = () => rej(new Error("no pude cargar el OCR"));
-    document.head.appendChild(s);
-  });
-  worker = await Tesseract.createWorker("eng");
-  await worker.setParameters({ tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ,-" });
-  return worker;
-}
-
-let escaneando = false, cicloId = null, ultimoTexto = "";
-
-let vueltas = 0;
 async function unCiclo() {
   if (!escaneando) return;
-  vueltas++;
+  const v = $("cam");
+  if (!v.videoWidth) { seguir(); return; }
   try {
-    const w = await getWorker();
-    // Ciclo rápido: SOLO la esquina (dígitos). Es lo que identifica exacto.
-    const ce = cropRegion(ZONA_ESQUINA);
-    if (ce) {
-      await w.setParameters({ tessedit_char_whitelist: "0123456789/ABCDEFGHIJKLMNOPQRSTUVWXYZ", tessedit_pageseg_mode: "6" });
-      const { data } = await w.recognize(ce);
-      const txt = (data.text || "").trim();
-      const info = parseEsquina(txt);
-      if (info) {
-        const card = await buscarPorEsquina(info);
-        if (card) { acertado(card); return; }
-        status(`Leí ${esc(info.set.toUpperCase())} #${esc(info.num)} pero no cuadra; sigo…`);
-      } else if (txt) {
-        status(`Buscando el número… <span class="meta">(${esc(txt.replace(/\s+/g, " ").slice(0, 24))})</span>`);
-      }
+    const m = marcoCarta(v);
+    // Probamos varios encuadres: así perdona que no centres la carta perfecta.
+    const variantes = [0, -0.02, 0.02, -0.04, 0.04];
+    let top = null;
+    for (const dz of variantes) {
+      const ax = m.x + m.w * (ARTE.x - dz), ay = m.y + m.h * (ARTE.y - dz);
+      const aw = m.w * (ARTE.w + dz * 2), ah = m.h * (ARTE.h + dz * 2);
+      const r = buscarHuella(huella(v, ax, ay, aw, ah));
+      if (r && (!top || r.dist < top.dist)) top = r;
     }
-    // Cada 4 vueltas, intento también por el nombre (cartas antiguas o en inglés).
-    if (vueltas % 4 === 0) {
-      const ct = cropRegion(ZONA_TITULO);
-      if (ct) {
-        await w.setParameters({ tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ,-", tessedit_pageseg_mode: "7" });
-        const { data } = await w.recognize(ct);
-        const linea = (data.text || "").split("\n").map((t) => t.trim()).filter(Boolean)[0] || "";
-        const cand = bestMatches(linea, 3);
-        if (cand.length && cand[0].score > 0.82) {
-          showCandidates(cand);
-          status("¿Es alguna de estas? Toca para confirmar.");
-          seguir();
-          return;
-        }
-      }
+    if (top && top.dist <= 12) {
+      const [nombre, set, num] = (INDEX[top.i] || "").split("|");
+      if (nombre) { await acertadoPorArte(nombre, set, num, top); return; }
+    } else if (top) {
+      status(`Buscando… <span class="meta">(mejor parecido: ${64 - top.dist}/64)</span>`);
     }
   } catch (err) { status("❌ " + err.message); }
   seguir();
 }
 
-let ultimoId = null, ultimoT = 0;
-function acertado(card) {
-  // Evita contar dos veces la misma carta mientras sigue delante de la cámara.
-  const id = card.id;
-  if (id === ultimoId && Date.now() - ultimoT < 6000) { seguir(); return; }
-  ultimoId = id; ultimoT = Date.now();
-  if (navigator.vibrate) navigator.vibrate(60);
-  flash();
-  addSesion(card);
-  avisoWishlist(card);
-  status(`✅ <b>${esc(card.name)}</b> · pasa a la siguiente carta`);
-  seguir();  // NO se detiene: así puedes ir pasando cartas una tras otra
-}
-
-function seguir() { if (escaneando) cicloId = setTimeout(unCiclo, 120); }
-
-function flash() {
-  const f = $("flash");
-  f.classList.remove("hidden");
-  setTimeout(() => f.classList.add("hidden"), 260);
-}
-
-// Aviso grande si la carta está en tu lista, con tu precio objetivo en € y ¥.
-function avisoWishlist(card) {
-  const w = cardmarket[card.name];
-  const box = $("wishBanner");
-  if (w == null) { box.innerHTML = ""; return; }
-  const objetivo = wishEur(w);
-  const precio = card.prices && card.prices.eur ? Number(card.prices.eur) : null;
-  const veredicto = (objetivo != null && precio != null)
-    ? `<div class="wish-verdict ${precio <= objetivo ? "good" : "bad"}">${precio <= objetivo
-        ? "✅ Está por debajo de tu objetivo" : "⚠️ Está por encima de tu objetivo"}</div>` : "";
-  box.innerHTML = `<div class="wish-alert">
-      <div class="wish-title">⭐ ${esc(card.name)} está en tu lista</div>
-      <div>Quieres <b>${wishQty(w)}</b> copia(s)${objetivo != null
-        ? ` · objetivo <b>${eur(objetivo)}</b> <span class="yen">${yen(objetivo)}</span>` : " · sin precio objetivo"}</div>
-      ${veredicto}
-    </div>`;
-  setTimeout(() => { if (box.firstChild) box.innerHTML = ""; }, 12000);
+async function acertadoPorArte(nombre, set, num, top) {
+  let card = null;
+  try {
+    const r = await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(set)}/${encodeURIComponent(num)}`);
+    if (r.ok) card = await r.json();
+  } catch (_) {}
+  if (!card) { status(`Reconocida ${esc(nombre)} pero no pude cargar sus datos.`); seguir(); return; }
+  acertado(card);
 }
 
 function pausar() {
@@ -261,10 +219,10 @@ function pausar() {
 
 async function alternarEscaneo() {
   if (escaneando) { pausar(); status("En pausa."); return; }
+  try { await cargarBD(); } catch { return; }
   escaneando = true;
   $("shotBtn").textContent = "⏸️ Pausar";
-  status("Escaneando… acerca la <b>esquina inferior izquierda</b> de la carta.");
-  await getWorker();
+  status("Escaneando… encuadra la carta en el marco.");
   unCiclo();
 }
 
@@ -422,30 +380,22 @@ async function escanearImagen(file) {
   pausar();
   status("🔎 Analizando la foto…");
   try {
+    await cargarBD();
     const bmp = await createImageBitmap(file);
-    const zonas = [ZONA_ESQUINA, ZONA_TITULO];
-    const w = await getWorker();
-    for (let i = 0; i < zonas.length; i++) {
-      const z = zonas[i];
-      const c = document.createElement("canvas");
-      c.width = Math.round(bmp.width * z.w) * 2;
-      c.height = Math.round(bmp.height * z.h) * 2;
-      const ctx = c.getContext("2d");
-      ctx.drawImage(bmp, bmp.width * z.x, bmp.height * z.y, bmp.width * z.w, bmp.height * z.h, 0, 0, c.width, c.height);
-      const { data } = await w.recognize(c);
-      if (i === 0) {
-        const info = parseEsquina(data.text || "");
-        if (info) {
-          const card = await buscarPorEsquina(info);
-          if (card) { if (navigator.vibrate) navigator.vibrate(60); addSesion(card); avisoWishlist(card); openCardObj(card); return; }
-        }
-      } else {
-        const linea = (data.text || "").split("\n").map((t) => t.trim()).filter(Boolean)[0] || "";
-        const cand = bestMatches(linea, 4);
-        if (cand.length) { showCandidates(cand); status("¿Es alguna de estas?"); return; }
-      }
+    let top = null;
+    // La carta puede ocupar todo el encuadre o parte: probamos varias escalas.
+    for (const f of [1, 0.9, 0.8]) {
+      const w = bmp.width * f, h = bmp.height * f;
+      const x = (bmp.width - w) / 2, y = (bmp.height - h) / 2;
+      const r = buscarHuella(huella(bmp, x + w * ARTE.x, y + h * ARTE.y, w * ARTE.w, h * ARTE.h));
+      if (r && (!top || r.dist < top.dist)) top = r;
     }
-    status("No he podido identificarla en la foto. Prueba con el nombre a mano.");
+    if (top && top.dist <= 14) {
+      const [nombre, set, num] = (INDEX[top.i] || "").split("|");
+      await acertadoPorArte(nombre, set, num, top);
+    } else {
+      status("No la reconozco en la foto. Prueba con la carta más centrada o busca por nombre.");
+    }
   } catch (err) { status("❌ " + err.message); }
 }
 

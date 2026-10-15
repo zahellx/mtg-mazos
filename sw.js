@@ -1,7 +1,7 @@
 // Service worker: cachea el app shell para que funcione offline.
 // El JSON de mazos se sirve network-first (para coger lo último que publicó el Action),
 // con fallback a caché si no hay red.
-const CACHE = "mtg-mazos-v63";
+const CACHE = "mtg-mazos-v64";
 const SHELL = [
   "./",
   "./index.html",
@@ -118,6 +118,18 @@ self.addEventListener("fetch", (e) => {
   }
 
   // decks-data.json: network-first.
+  // Huellas de ilustraciones: grandes y estables -> caché primero.
+  if (url.pathname.endsWith("art-hashes.bin") || url.pathname.endsWith("art-index.txt")) {
+    e.respondWith(caches.open(CACHE).then(async (c) => {
+      const hit = await c.match(e.request, { ignoreSearch: true });
+      if (hit) return hit;
+      const res = await fetch(e.request);
+      if (res.ok) c.put(e.request, res.clone());
+      return res;
+    }));
+    return;
+  }
+
   if (url.pathname.endsWith("decks-data.json")) {
     e.respondWith(
       fetch(e.request).then((res) => {
