@@ -3,7 +3,7 @@
  * con la cámara (sin leer texto, así vale en cualquier idioma).
  *
  * Produce dos ficheros en data/:
- *   art-hashes.bin   8 bytes por carta (dHash 8x8 = 64 bits)
+ *   art-hashes.bin   32 bytes por carta (dHash 8x8 de R, G, B y luz = 256 bits)
  *   art-index.txt    una línea por carta: nombre|set|numero  (mismo orden)
  *
  * Pensado para GitHub Actions: node build-art-hashes.js
@@ -19,18 +19,34 @@ const OUT_DIR = path.join(__dirname, "data");
 const LIMIT = parseInt(process.env.LIMIT || "0", 10);
 const CONC = parseInt(process.env.CONCURRENCIA || "8", 10);
 
-/** dHash: compara cada píxel con el de su derecha -> 64 bits robustos al brillo. */
+// 256 bits: el dHash en gris de 64 bits se quedaba corto (medido: la carta
+// correcta caía a ~11 bits y la más parecida PERO DISTINTA a ~12, o sea
+// encima). El color es lo que separa de verdad: con R, G, B y luz la correcta
+// queda a ~27 y la falsa a ~53.
+const BYTES = 32;
+
+/** dHash de 8x8 sobre R, G, B y luminancia: compara cada píxel con el de su derecha. */
 async function dHash(buf) {
-  const px = await sharp(buf).greyscale().resize(9, 8, { fit: "fill" }).raw().toBuffer();
-  const bytes = Buffer.alloc(8);
+  const { data, info } = await sharp(buf).resize(9, 8, { fit: "fill" }).raw().toBuffer({ resolveWithObject: true });
+  const c = info.channels;
+  const bytes = Buffer.alloc(BYTES);
   let bit = 0;
-  for (let y = 0; y < 8; y++) {
+  const pon = () => { bytes[bit >> 3] |= 1 << (7 - (bit & 7)); };
+  for (let ch = 0; ch < 3; ch++)
+    for (let y = 0; y < 8; y++)
+      for (let x = 0; x < 8; x++) {
+        const i = (y * 9 + x) * c + ch, j = (y * 9 + x + 1) * c + ch;
+        if (data[i] > data[j]) pon();
+        bit++;
+      }
+  // Luminancia con la MISMA fórmula que usa el móvil (Rec.601), para que las
+  // dos huellas salgan iguales; sharp.greyscale() usa otra y no casaría.
+  const luz = (p) => 0.299 * data[p * c] + 0.587 * data[p * c + 1] + 0.114 * data[p * c + 2];
+  for (let y = 0; y < 8; y++)
     for (let x = 0; x < 8; x++) {
-      const izq = px[y * 9 + x], der = px[y * 9 + x + 1];
-      if (izq > der) bytes[bit >> 3] |= 1 << (7 - (bit & 7));
+      if (luz(y * 9 + x) > luz(y * 9 + x + 1)) pon();
       bit++;
     }
-  }
   return bytes;
 }
 
@@ -67,8 +83,8 @@ function cargarExistente() {
   if (!fs.existsSync(fBin) || !fs.existsSync(fIdx)) return null;
   const bin = fs.readFileSync(fBin);
   const idx = fs.readFileSync(fIdx, "utf8").split("\n").filter(Boolean);
-  if (idx.length !== bin.length / 8) {
-    console.log("⚠️ Los ficheros existentes no cuadran; recalculo todo.");
+  if (idx.length !== bin.length / BYTES) {
+    console.log("⚠️ Los ficheros existentes no cuadran con el formato actual; recalculo todo.");
     return null;
   }
   const clave = new Set(idx.map((l) => { const p = l.split("|"); return `${p[1]}|${p[2]}`; }));
@@ -90,7 +106,7 @@ async function main() {
   }
   console.log(`${cartas.length} ilustraciones a procesar (concurrencia ${CONC})`);
 
-  const hashes = Buffer.alloc(cartas.length * 8);
+  const hashes = Buffer.alloc(cartas.length * BYTES);
   const ok = new Array(cartas.length).fill(false);
   let hechas = 0, fallos = 0, siguiente = 0;
 
@@ -102,7 +118,7 @@ async function main() {
         const r = await fetch(cartas[i].art, { headers: CABECERAS });
         if (r.ok) {
           const h = await dHash(Buffer.from(await r.arrayBuffer()));
-          h.copy(hashes, i * 8);
+          h.copy(hashes, i * BYTES);
           ok[i] = true;
         } else fallos++;
       } catch { fallos++; }
@@ -121,14 +137,14 @@ async function main() {
   let nuevas = 0;
   for (let i = 0; i < cartas.length; i++) {
     if (!ok[i]) continue;
-    trozos.push(hashes.subarray(i * 8, i * 8 + 8));
+    trozos.push(hashes.subarray(i * BYTES, i * BYTES + BYTES));
     lineas.push(`${cartas[i].name}|${cartas[i].set}|${cartas[i].num}`);
     nuevas++;
   }
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUT_DIR, "art-hashes.bin"), Buffer.concat(trozos));
   fs.writeFileSync(path.join(OUT_DIR, "art-index.txt"), lineas.join("\n"));
-  console.log(`\n✅ +${nuevas} nuevas · total ${lineas.length} huellas (${(lineas.length * 8 / 1024).toFixed(0)} KB) · ${fallos} fallos · ${Math.round((Date.now() - t0) / 60000)} min`);
+  console.log(`\n✅ +${nuevas} nuevas · total ${lineas.length} huellas (${(lineas.length * BYTES / 1024 / 1024).toFixed(2)} MB) · ${fallos} fallos · ${Math.round((Date.now() - t0) / 60000)} min`);
 }
 
 main().catch((e) => { console.error("❌", e); process.exit(1); });

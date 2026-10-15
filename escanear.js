@@ -99,9 +99,17 @@ const status = (m) => { $("scanStatus").innerHTML = m; };
 // ── Reconocimiento por ILUSTRACIÓN (huella de imagen) ─────────────────────────
 // Comparamos la huella de lo que ve la cámara con las de todas las cartas.
 // No lee texto: funciona igual en japonés, inglés o lo que sea.
-let HASHES = null;   // Uint32Array (2 por carta)
+const PALABRAS = 8;              // 8 x 32 bits = huella de 256 bits
+let HASHES = null;   // Uint32Array (PALABRAS por carta)
 let INDEX = null;    // ["nombre|set|num", ...]
+let NOMBRE_ID = null; // id de nombre por carta, para medir el margen contra OTRA carta
 let cargandoBD = null;
+
+// Umbrales medidos con 1.400 cartas y fotos simuladas de móvil:
+// foto buena -> distancia ~27 (p95 41); encuadre malo -> ~76 con margen ~4.
+// Con esto entra el 98% de las buenas y no cuela ninguna mala.
+const MAX_DIST = 45;
+const MIN_MARGEN = 12;
 
 function cargarBD() {
   if (cargandoBD) return cargandoBD;
@@ -112,10 +120,23 @@ function cargarBD() {
       fetch("data/art-index.txt").then((r) => r.text()),
     ]);
     const dv = new DataView(b);
-    const n = Math.floor(b.byteLength / 8);
-    HASHES = new Uint32Array(n * 2);
-    for (let i = 0; i < n; i++) { HASHES[i * 2] = dv.getUint32(i * 8); HASHES[i * 2 + 1] = dv.getUint32(i * 8 + 4); }
+    const n = Math.floor(b.byteLength / (PALABRAS * 4));
+    HASHES = new Uint32Array(n * PALABRAS);
+    for (let i = 0; i < n * PALABRAS; i++) HASHES[i] = dv.getUint32(i * 4);
     INDEX = t.split("\n");
+    // Si no cuadran, la base es de otro formato (p.ej. la de 64 bits): mejor
+    // decirlo que reconocer cualquier cosa.
+    if (INDEX.length !== n) throw new Error("la base de huellas es de otra versión; se está regenerando, prueba en unos minutos");
+    // Dos cartas con el MISMO nombre no son una confusión: el margen se mide
+    // siempre contra una carta distinta.
+    const ids = new Map();
+    NOMBRE_ID = new Uint32Array(n);
+    for (let i = 0; i < n; i++) {
+      const nm = (INDEX[i] || "").split("|")[0];
+      let id = ids.get(nm);
+      if (id === undefined) { id = ids.size; ids.set(nm, id); }
+      NOMBRE_ID[i] = id;
+    }
     status(`Reconocedor listo: ${n.toLocaleString("es-ES")} ilustraciones.`);
     return n;
   })().catch((e) => { cargandoBD = null; status("❌ " + e.message + " — lanza el proceso de huellas en GitHub."); throw e; });
@@ -130,7 +151,7 @@ const ARTE = { x: 0.079, y: 0.112, w: 0.842, h: 0.424 };
 const lienzo9 = document.createElement("canvas"); lienzo9.width = 9; lienzo9.height = 8;
 const lienzoMed = document.createElement("canvas"); lienzoMed.width = 36; lienzoMed.height = 32;
 
-/** Huella de 64 bits de una región, igual que la calculada en el servidor. */
+/** Huella de 256 bits de una región, igual que la calculada en el servidor. */
 function huella(fuente, sx, sy, sw, sh) {
   // Reducir en dos pasos da una miniatura más fiel (y la huella coincide mejor).
   const m = lienzoMed.getContext("2d", { willReadFrequently: true });
@@ -140,31 +161,52 @@ function huella(fuente, sx, sy, sw, sh) {
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
   c.drawImage(lienzoMed, 0, 0, 36, 32, 0, 0, 9, 8);
   const d = c.getImageData(0, 0, 9, 8).data;
-  const h = new Uint32Array(2);
+  const h = new Uint32Array(PALABRAS);
   let bit = 0;
-  for (let y = 0; y < 8; y++) {
+  const pon = () => { h[bit >> 5] |= 1 << (31 - (bit & 31)); };
+  for (let ch = 0; ch < 3; ch++)
+    for (let y = 0; y < 8; y++)
+      for (let x = 0; x < 8; x++) {
+        if (d[(y * 9 + x) * 4 + ch] > d[(y * 9 + x + 1) * 4 + ch]) pon();
+        bit++;
+      }
+  const luz = (p) => 0.299 * d[p * 4] + 0.587 * d[p * 4 + 1] + 0.114 * d[p * 4 + 2];
+  for (let y = 0; y < 8; y++)
     for (let x = 0; x < 8; x++) {
-      const i1 = (y * 9 + x) * 4, i2 = (y * 9 + x + 1) * 4;
-      const g1 = 0.299 * d[i1] + 0.587 * d[i1 + 1] + 0.114 * d[i1 + 2];
-      const g2 = 0.299 * d[i2] + 0.587 * d[i2 + 1] + 0.114 * d[i2 + 2];
-      if (g1 > g2) h[bit >> 5] |= 1 << (31 - (bit & 31));
+      if (luz(y * 9 + x) > luz(y * 9 + x + 1)) pon();
       bit++;
     }
-  }
   return h;
 }
 
-/** Busca la carta más parecida. Devuelve {i, dist} o null. */
+/** Distancia entre la huella h y la carta i, cortando en cuanto se pasa de `tope`. */
+function distancia(i, h, tope) {
+  const p = i * PALABRAS;
+  let d = popcount(HASHES[p] ^ h[0]) + popcount(HASHES[p + 1] ^ h[1])
+        + popcount(HASHES[p + 2] ^ h[2]) + popcount(HASHES[p + 3] ^ h[3]);
+  if (d >= tope) return d;   // ya no puede ganar: nos ahorramos la otra mitad
+  return d + popcount(HASHES[p + 4] ^ h[4]) + popcount(HASHES[p + 5] ^ h[5])
+           + popcount(HASHES[p + 6] ^ h[6]) + popcount(HASHES[p + 7] ^ h[7]);
+}
+
+/** Busca la carta más parecida. `margen` es contra la mejor carta DISTINTA. */
 function buscarHuella(h) {
   if (!HASHES) return null;
-  const a = h[0], b = h[1];
-  let mejor = 99, idx = -1, segundo = 99;
-  for (let i = 0; i < HASHES.length; i += 2) {
-    const d = popcount(HASHES[i] ^ a) + popcount(HASHES[i + 1] ^ b);
-    if (d < mejor) { segundo = mejor; mejor = d; idx = i >> 1; }
-    else if (d < segundo) segundo = d;
+  const n = NOMBRE_ID.length;
+  let mejor = 257, idx = -1;
+  for (let i = 0; i < n; i++) {
+    const d = distancia(i, h, mejor);
+    if (d < mejor) { mejor = d; idx = i; }
   }
-  return idx < 0 ? null : { i: idx, dist: mejor, margen: segundo - mejor };
+  if (idx < 0) return null;
+  const suyo = NOMBRE_ID[idx];
+  let otra = 257;
+  for (let i = 0; i < n; i++) {
+    if (NOMBRE_ID[i] === suyo) continue;
+    const d = distancia(i, h, otra);
+    if (d < otra) otra = d;
+  }
+  return { i: idx, dist: mejor, margen: otra - mejor };
 }
 
 /** La guía dibujada en pantalla, en coordenadas del vídeo. */
@@ -176,6 +218,7 @@ function marcoCarta(v) {
 
 let escaneando = false, cicloId = null;
 let ultimaId = null, ultimaTs = 0;   // para no apuntar dos veces la misma carta
+let candidata = null;                // carta vista en el ciclo anterior
 
 /** Reprograma el siguiente ciclo de escaneo. */
 function seguir(ms = 120) {
@@ -215,12 +258,23 @@ async function unCiclo() {
       const r = buscarHuella(huella(v, ax, ay, aw, ah));
       if (r && (!top || r.dist < top.dist)) top = r;
     }
-    if (top && top.dist <= 12) {
+    if (top && top.dist <= MAX_DIST && top.margen >= MIN_MARGEN) {
       const [nombre, set, num] = (INDEX[top.i] || "").split("|");
-      if (nombre) { await acertadoPorArte(nombre, set, num, top); return; }
-    } else if (top) {
-      status(`Buscando… <span class="meta">(mejor parecido: ${64 - top.dist}/64)</span>`);
+      // Pedimos dos ciclos seguidos con la misma carta: un fotograma suelto
+      // con reflejo o movido puede dar cualquier cosa.
+      if (nombre && nombre === candidata) {
+        candidata = null;
+        await acertadoPorArte(nombre, set, num, top);
+        return;
+      }
+      candidata = nombre;
+      status(`Confirmando ${esc(nombre || "…")}…`);
+      seguir(80);
+      return;
     }
+    candidata = null;
+    if (top && top.dist <= MAX_DIST) status("Dudo entre varias cartas parecidas… mueve un poco la carta.");
+    else if (top) status(`Encuadra la ilustración en el marco… <span class="meta">(parecido ${Math.max(0, Math.round(100 - (top.dist * 100) / 90))}%)</span>`);
   } catch (err) { status("❌ " + err.message); }
   seguir();
 }
@@ -414,11 +468,23 @@ async function escanearImagen(file) {
       const r = buscarHuella(huella(bmp, x + w * ARTE.x, y + h * ARTE.y, w * ARTE.w, h * ARTE.h));
       if (r && (!top || r.dist < top.dist)) top = r;
     }
-    if (top && top.dist <= 14) {
+    if (top && top.dist <= MAX_DIST && top.margen >= MIN_MARGEN) {
       const [nombre, set, num] = (INDEX[top.i] || "").split("|");
       await acertadoPorArte(nombre, set, num, top);
+    } else if (top && top.dist <= 70) {
+      // No llega para darla por buena, pero tampoco la tiramos: que decidas tú.
+      const [nombre, set, num] = (INDEX[top.i] || "").split("|");
+      status("No estoy seguro con esta foto.");
+      $("detail").innerHTML = `<div class="empty">
+          <div class="big">🤔</div>
+          <div>¿Es <b>${esc(nombre)}</b>?</div>
+          <button class="btn" id="siEsEsa" style="margin-top:12px">Sí, es esa</button>
+          <div class="note">Si no, repite la foto con la ilustración centrada y sin reflejos.</div>
+        </div>`;
+      const b = $("siEsEsa");
+      if (b) b.onclick = () => acertadoPorArte(nombre, set, num, top);
     } else {
-      status("No la reconozco en la foto. Prueba con la carta más centrada o busca por nombre.");
+      status("No la reconozco en la foto. Prueba con la ilustración centrada o busca por nombre.");
     }
   } catch (err) { status("❌ " + err.message); }
 }
