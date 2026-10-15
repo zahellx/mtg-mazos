@@ -60,9 +60,34 @@ async function listaDeCartas() {
   return out;
 }
 
+/** Lee lo ya calculado para no repetir trabajo. */
+function cargarExistente() {
+  const fBin = path.join(OUT_DIR, "art-hashes.bin");
+  const fIdx = path.join(OUT_DIR, "art-index.txt");
+  if (!fs.existsSync(fBin) || !fs.existsSync(fIdx)) return null;
+  const bin = fs.readFileSync(fBin);
+  const idx = fs.readFileSync(fIdx, "utf8").split("\n").filter(Boolean);
+  if (idx.length !== bin.length / 8) {
+    console.log("⚠️ Los ficheros existentes no cuadran; recalculo todo.");
+    return null;
+  }
+  const clave = new Set(idx.map((l) => { const p = l.split("|"); return `${p[1]}|${p[2]}`; }));
+  return { bin, idx, clave };
+}
+
 async function main() {
   const t0 = Date.now();
-  const cartas = await listaDeCartas();
+  const todas = await listaDeCartas();
+  const previo = process.env.RECALCULAR === "1" ? null : cargarExistente();
+
+  // Solo lo que no teníamos: así la revisión semanal tarda minutos, no horas.
+  const cartas = previo ? todas.filter((c) => !previo.clave.has(`${c.set}|${c.num}`)) : todas;
+  if (previo) console.log(`Ya teníamos ${previo.idx.length} huellas · nuevas a procesar: ${cartas.length}`);
+
+  if (previo && cartas.length === 0) {
+    console.log("✅ Sin ilustraciones nuevas: no hay nada que hacer.");
+    return;
+  }
   console.log(`${cartas.length} ilustraciones a procesar (concurrencia ${CONC})`);
 
   const hashes = Buffer.alloc(cartas.length * 8);
@@ -82,29 +107,28 @@ async function main() {
         } else fallos++;
       } catch { fallos++; }
       if (++hechas % 500 === 0) {
-        const seg = (Date.now() - t0) / 1000;
-        const ritmo = hechas / seg;
+        const seg = (Date.now() - t0) / 1000, ritmo = hechas / seg;
         console.log(`  ${hechas}/${cartas.length} · ${ritmo.toFixed(1)}/s · faltan ~${Math.round((cartas.length - hechas) / ritmo / 60)} min · fallos ${fallos}`);
       }
-      await new Promise((r) => setTimeout(r, 60)); // amable con el servidor
+      await new Promise((r) => setTimeout(r, 60));
     }
   }
   await Promise.all(Array.from({ length: CONC }, trabajador));
 
-  // Solo guardamos las que salieron bien, manteniendo huella e índice alineados.
-  const buenas = [];
-  const binFinal = Buffer.alloc(cartas.length * 8);
-  let n = 0;
+  // Se añaden al final, manteniendo huella e índice alineados.
+  const trozos = previo ? [previo.bin] : [];
+  const lineas = previo ? previo.idx.slice() : [];
+  let nuevas = 0;
   for (let i = 0; i < cartas.length; i++) {
     if (!ok[i]) continue;
-    hashes.copy(binFinal, n * 8, i * 8, i * 8 + 8);
-    buenas.push(`${cartas[i].name}|${cartas[i].set}|${cartas[i].num}`);
-    n++;
+    trozos.push(hashes.subarray(i * 8, i * 8 + 8));
+    lineas.push(`${cartas[i].name}|${cartas[i].set}|${cartas[i].num}`);
+    nuevas++;
   }
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  fs.writeFileSync(path.join(OUT_DIR, "art-hashes.bin"), binFinal.subarray(0, n * 8));
-  fs.writeFileSync(path.join(OUT_DIR, "art-index.txt"), buenas.join("\n"));
-  console.log(`\n✅ ${n} huellas (${(n * 8 / 1024).toFixed(0)} KB) · ${fallos} fallos · ${Math.round((Date.now() - t0) / 60000)} min`);
+  fs.writeFileSync(path.join(OUT_DIR, "art-hashes.bin"), Buffer.concat(trozos));
+  fs.writeFileSync(path.join(OUT_DIR, "art-index.txt"), lineas.join("\n"));
+  console.log(`\n✅ +${nuevas} nuevas · total ${lineas.length} huellas (${(lineas.length * 8 / 1024).toFixed(0)} KB) · ${fallos} fallos · ${Math.round((Date.now() - t0) / 60000)} min`);
 }
 
 main().catch((e) => { console.error("❌", e); process.exit(1); });

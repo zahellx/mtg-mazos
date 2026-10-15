@@ -3,7 +3,7 @@ name: Generar huellas de ilustraciones
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 1 * *"   # una vez al mes (salen cartas nuevas)
+    - cron: "0 4 * * 1"   # cada lunes: solo procesa las ilustraciones nuevas
 
 permissions:
   contents: write
@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: "22"
       - run: npm install sharp --no-audit --no-fund
-      - name: Calcular huellas (tarda ~1-2 h)
+      - name: Calcular huellas de las cartas nuevas
         env:
           CONCURRENCIA: "10"
         run: node build-art-hashes.js
