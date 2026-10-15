@@ -194,20 +194,55 @@ async function unCiclo() {
       const linea = (data.text || "").split("\n").map((t) => t.trim()).filter(Boolean)[0] || "";
       const cand = bestMatches(linea, 3);
       if (cand.length && cand[0].score > 0.82) {
-        pausar();
         showCandidates(cand);
         status("¿Es alguna de estas? Toca para confirmar.");
+        seguir();
         return;
       }
     }
   } catch (err) { status("❌ " + err.message); }
-  if (escaneando) cicloId = setTimeout(unCiclo, 400);
+  seguir();
 }
 
+let ultimoId = null, ultimoT = 0;
 function acertado(card) {
-  pausar();
+  // Evita contar dos veces la misma carta mientras sigue delante de la cámara.
+  const id = card.id;
+  if (id === ultimoId && Date.now() - ultimoT < 6000) { seguir(); return; }
+  ultimoId = id; ultimoT = Date.now();
   if (navigator.vibrate) navigator.vibrate(60);
-  openCardObj(card);
+  flash();
+  addSesion(card);
+  avisoWishlist(card);
+  status(`✅ <b>${esc(card.name)}</b> · pasa a la siguiente carta`);
+  seguir();  // NO se detiene: así puedes ir pasando cartas una tras otra
+}
+
+function seguir() { if (escaneando) cicloId = setTimeout(unCiclo, 700); }
+
+function flash() {
+  const f = $("flash");
+  f.classList.remove("hidden");
+  setTimeout(() => f.classList.add("hidden"), 260);
+}
+
+// Aviso grande si la carta está en tu lista, con tu precio objetivo en € y ¥.
+function avisoWishlist(card) {
+  const w = cardmarket[card.name];
+  const box = $("wishBanner");
+  if (w == null) { box.innerHTML = ""; return; }
+  const objetivo = wishEur(w);
+  const precio = card.prices && card.prices.eur ? Number(card.prices.eur) : null;
+  const veredicto = (objetivo != null && precio != null)
+    ? `<div class="wish-verdict ${precio <= objetivo ? "good" : "bad"}">${precio <= objetivo
+        ? "✅ Está por debajo de tu objetivo" : "⚠️ Está por encima de tu objetivo"}</div>` : "";
+  box.innerHTML = `<div class="wish-alert">
+      <div class="wish-title">⭐ ${esc(card.name)} está en tu lista</div>
+      <div>Quieres <b>${wishQty(w)}</b> copia(s)${objetivo != null
+        ? ` · objetivo <b>${eur(objetivo)}</b> <span class="yen">${yen(objetivo)}</span>` : " · sin precio objetivo"}</div>
+      ${veredicto}
+    </div>`;
+  setTimeout(() => { if (box.firstChild) box.innerHTML = ""; }, 12000);
 }
 
 function pausar() {
@@ -227,24 +262,24 @@ async function alternarEscaneo() {
 
 // ── Resultados ────────────────────────────────────────────────────────────────
 function showCandidates(cand) {
-  $("results").innerHTML = `<div class="section-h">¿Cuál es?</div>` + cand.map((c) => `
+  $("detail").innerHTML = `<div class="section-h">¿Cuál es?</div>` + cand.map((c) => `
     <div class="cm-row" data-pick="${esc(c.name)}">
       <img loading="lazy" data-name="${esc(c.name)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(c.name)}" />
       <div class="cm-name">${esc(c.name)}${inWishlist(c.name) ? ' <span class="cm-badge">⭐ en tu lista</span>' : ""}</div>
       <div class="cm-qty">${Math.round(c.score * 100)}%</div>
     </div>`).join("");
-  if (window.mtgImg) window.mtgImg.load($("results"));
-  $("results").querySelectorAll("[data-pick]").forEach((el) => { el.onclick = () => openCard(el.dataset.pick); });
+  if (window.mtgImg) window.mtgImg.load($("detail"));
+  $("detail").querySelectorAll("[data-pick]").forEach((el) => { el.onclick = () => openCard(el.dataset.pick); });
 }
 
 async function openCard(name) {
-  $("results").innerHTML = `<div class="empty"><div class="big">⏳</div><div>Cargando ${esc(name)}…</div></div>`;
+  $("detail").innerHTML = `<div class="empty"><div class="big">⏳</div><div>Cargando ${esc(name)}…</div></div>`;
   let card = null;
   try {
     const r = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`);
     if (r.ok) card = await r.json();
   } catch (_) {}
-  if (!card) { $("results").innerHTML = `<div class="empty">❌ No pude cargar la carta.</div>`; return; }
+  if (!card) { $("detail").innerHTML = `<div class="empty">❌ No pude cargar la carta.</div>`; return; }
   openCardObj(card);
 }
 
@@ -288,7 +323,7 @@ function renderCard(card) {
     : `<a class="btn" href="${esc(cmLink(card, null))}" target="_blank" rel="noopener">🛒 Ver en Cardmarket</a>
        <div class="note">Configura tus filtros con el ⚙️ para tener botones rápidos.</div>`;
 
-  $("results").innerHTML = `
+  $("detail").innerHTML = `
     ${aviso}
     <div class="scan-card">
       ${img ? `<img class="scan-img" src="${img}" alt="${esc(card.name)}" />` : ""}
@@ -311,28 +346,38 @@ function renderCard(card) {
   };
 }
 
-// ── Pendientes ────────────────────────────────────────────────────────────────
-function addPending(name) {
-  pending = pending.filter((p) => p.name !== name);
-  pending.unshift({ name, ts: Date.now() });
-  if (pending.length > 50) pending = pending.slice(0, 50);
+// ── Sesión de escaneo (se acumula, como el montón de cartas) ─────────────────
+function addSesion(card) {
+  const precio = card.prices && card.prices.eur ? Number(card.prices.eur) : null;
+  pending.unshift({
+    name: card.name, id: card.id, eur: precio, ts: Date.now(),
+    set: (card.set || "").toUpperCase(), num: card.collector_number || "",
+  });
+  if (pending.length > 200) pending = pending.slice(0, 200);
   save(PENDING_KEY, pending);
   renderPending();
 }
+
 function renderPending() {
-  $("historyTitle").textContent = pending.length ? `📋 Escaneadas (${pending.length})` : "";
-  $("history").innerHTML = pending.map((p) => `
+  const n = pending.length;
+  const total = pending.reduce((acc, p) => acc + (p.eur || 0), 0);
+  $("sessionTitle").textContent = n ? `📋 Sesión · ${n} carta(s)` : "Sesión vacía";
+  $("sessionTotal").innerHTML = n ? `${eur(total)} <span class="yen">${yen(total)}</span>` : "";
+  $("sessionActions").style.display = n ? "flex" : "none";
+  $("session").innerHTML = pending.map((p, i) => `
     <div class="cm-row" data-pick="${esc(p.name)}">
       <img loading="lazy" data-name="${esc(p.name)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(p.name)}" />
-      <div class="cm-name">${esc(p.name)}${inWishlist(p.name) ? ' <span class="cm-badge">⭐</span>' : ""}</div>
-      <button class="cm-x" data-del="${esc(p.name)}" title="Quitar">×</button>
+      <div class="cm-name">${esc(p.name)}${inWishlist(p.name) ? ' <span class="cm-badge">⭐</span>' : ""}
+        <div class="note">${esc(p.set)} ${esc(p.num)}</div></div>
+      <div class="cm-qty">${p.eur != null ? eur(p.eur) : "—"}<div class="yen">${p.eur != null ? yen(p.eur) : ""}</div></div>
+      <button class="cm-x" data-del="${i}" title="Quitar">×</button>
     </div>`).join("");
-  if (window.mtgImg) window.mtgImg.load($("history"));
-  $("history").querySelectorAll("[data-pick]").forEach((el) => {
-    el.onclick = (e) => { if (e.target.dataset.del) return; openCard(el.dataset.pick); };
+  if (window.mtgImg) window.mtgImg.load($("session"));
+  $("session").querySelectorAll("[data-pick]").forEach((el) => {
+    el.onclick = (e) => { if (e.target.dataset.del !== undefined) return; openCard(el.dataset.pick); };
   });
-  $("history").querySelectorAll("[data-del]").forEach((b) => {
-    b.onclick = (e) => { e.stopPropagation(); pending = pending.filter((p) => p.name !== b.dataset.del); save(PENDING_KEY, pending); renderPending(); };
+  $("session").querySelectorAll("[data-del]").forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); pending.splice(+b.dataset.del, 1); save(PENDING_KEY, pending); renderPending(); };
   });
 }
 
@@ -364,6 +409,38 @@ function savePreset() {
   renderPresets();
 }
 
+// ── Escanear una foto (sin cámara en vivo) ────────────────────────────────────
+async function escanearImagen(file) {
+  pausar();
+  status("🔎 Analizando la foto…");
+  try {
+    const bmp = await createImageBitmap(file);
+    const zonas = [ZONA_ESQUINA, ZONA_TITULO];
+    const w = await getWorker();
+    for (let i = 0; i < zonas.length; i++) {
+      const z = zonas[i];
+      const c = document.createElement("canvas");
+      c.width = Math.round(bmp.width * z.w) * 2;
+      c.height = Math.round(bmp.height * z.h) * 2;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(bmp, bmp.width * z.x, bmp.height * z.y, bmp.width * z.w, bmp.height * z.h, 0, 0, c.width, c.height);
+      const { data } = await w.recognize(c);
+      if (i === 0) {
+        const info = parseEsquina(data.text || "");
+        if (info) {
+          const card = await buscarPorEsquina(info);
+          if (card) { if (navigator.vibrate) navigator.vibrate(60); addSesion(card); avisoWishlist(card); openCardObj(card); return; }
+        }
+      } else {
+        const linea = (data.text || "").split("\n").map((t) => t.trim()).filter(Boolean)[0] || "";
+        const cand = bestMatches(linea, 4);
+        if (cand.length) { showCandidates(cand); status("¿Es alguna de estas?"); return; }
+      }
+    }
+    status("No he podido identificarla en la foto. Prueba con el nombre a mano.");
+  } catch (err) { status("❌ " + err.message); }
+}
+
 // ── Arranque ──────────────────────────────────────────────────────────────────
 async function init() {
   renderPending();
@@ -372,6 +449,29 @@ async function init() {
   getFx().then(() => { if (pending.length) renderPending(); });
 
   $("shotBtn").onclick = alternarEscaneo;
+
+  // Acciones sobre la sesión
+  $("sesClear").onclick = () => { if (confirm("¿Vaciar la sesión?")) { pending = []; save(PENDING_KEY, pending); renderPending(); } };
+  $("sesCopy").onclick = async () => {
+    const txt = pending.map((p) => `1 ${p.name}`).join("\n");
+    if (!txt) return;
+    try { await navigator.clipboard.writeText(txt); alert(`📋 Copiadas ${pending.length} cartas.`); }
+    catch { prompt("Copia la lista:", txt); }
+  };
+  $("sesWish").onclick = () => {
+    let n = 0;
+    pending.forEach((p) => { if (cardmarket[p.name] == null) { cardmarket[p.name] = 1; n++; } });
+    save(CARDMARKET_KEY, cardmarket);
+    renderPending();
+    alert(n ? `⭐ ${n} carta(s) añadidas a tu lista de Cardmarket.` : "Ya estaban todas en tu lista.");
+  };
+
+  // Plan C: una foto (de la galería o hecha al momento) en vez de vídeo.
+  $("fileBtn").onclick = () => $("fileInput").click();
+  $("fileInput").onchange = (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (f) escanearImagen(f);
+  };
   $("camBtn").onclick = () => { useBack = !useBack; startCam(); };
   $("manualGo").onclick = () => {
     const t = $("manualName").value.trim();

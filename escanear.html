@@ -7,7 +7,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Escanear cartas</title>
-  <link rel="stylesheet" href="styles.css?v=61" />
+  <link rel="stylesheet" href="styles.css?v=62" />
 </head>
 <body>
   <header>
@@ -20,29 +20,43 @@
   </header>
 
   <main>
-    <!-- Cámara -->
+    <!-- Escaneo -->
     <section id="scanView">
       <div class="cam-wrap">
         <video id="cam" playsinline muted></video>
         <div class="cam-guide-corner"><span>esquina ↙ (nº / edición)</span></div>
         <div class="cam-guide-title"><span>nombre (plan B)</span></div>
+        <div id="flash" class="cam-flash hidden"></div>
       </div>
+
       <div class="cam-actions">
         <button class="btn" id="shotBtn">⏸️ Pausar</button>
-        <button class="btn secondary" id="camBtn" style="width:auto;white-space:nowrap">🔄 Cámara</button>
+        <button class="btn secondary" id="camBtn" style="width:auto;white-space:nowrap">🔄</button>
+        <button class="btn secondary" id="fileBtn" style="width:auto;white-space:nowrap">📁</button>
+        <input type="file" id="fileInput" accept="image/*" capture="environment" class="hidden" />
       </div>
       <div id="scanStatus" class="meta" style="text-align:center;margin-top:8px"></div>
 
-      <div class="filters" style="margin-top:14px">
+      <div id="wishBanner"></div>
+
+      <div class="filters" style="margin-top:12px">
         <input type="search" id="manualName" placeholder="…o escribe el nombre a mano" />
         <button class="btn secondary" id="manualGo" style="width:auto">🔎</button>
       </div>
 
-      <div id="results"></div>
+      <div id="detail"></div>
 
-      <div id="historyBox">
-        <div class="section-h" id="historyTitle"></div>
-        <div id="history"></div>
+      <div id="sessionBox">
+        <div class="session-head">
+          <div id="sessionTitle">Sesión vacía</div>
+          <div id="sessionTotal" class="price-big"></div>
+        </div>
+        <div class="cm-actions" id="sessionActions" style="display:none">
+          <button class="btn secondary" id="sesCopy">📋 Copiar</button>
+          <button class="btn secondary" id="sesWish">⭐ A mi lista</button>
+          <button class="btn secondary" id="sesClear" style="width:auto">🗑️</button>
+        </div>
+        <div id="session"></div>
       </div>
     </section>
 
@@ -51,29 +65,21 @@
       <div class="collection-bar">
         <div class="title">⚙️ Tus filtros de Cardmarket</div>
         <p class="note" style="margin-top:0">
-          Ve a Cardmarket, busca <b>cualquier carta</b>, aplica los filtros que sueles usar
-          (idioma, estado mínimo, país del vendedor…) y <b>copia la URL</b> de esa página.
-          Pégala aquí: me quedo solo con los filtros y los aplicaré a todas las cartas que escanees.
+          En Cardmarket, busca cualquier carta, aplica los filtros que sueles usar
+          (idioma, estado mínimo, país del vendedor…) y <b>copia la URL</b>.
+          Pégala aquí: me quedo solo con los filtros y los aplico a todas las cartas que escanees.
         </p>
         <textarea id="cmUrl" rows="3" placeholder="https://www.cardmarket.com/es/Magic/Products/Singles/..." style="width:100%;background:#0f1115;border:1px solid #2a2f3a;color:#e8eaed;border-radius:9px;padding:10px;font-size:13px;margin:8px 0"></textarea>
-        <button class="btn" id="cmSave">💾 Guardar filtros</button>
+        <button class="btn" id="cmSave">💾 Guardar como botón rápido</button>
         <div id="cmInfo" class="meta" style="margin-top:10px"></div>
-        <button class="btn secondary" id="cmClearF" style="margin-top:8px">🗑️ Quitar filtros</button>
+        <button class="btn secondary" id="cmClearF" style="margin-top:8px">🗑️ Quitar todos</button>
       </div>
       <button class="btn secondary" id="cfgBack">‹ Volver a escanear</button>
     </section>
   </main>
 
-  <div id="cardModal" class="modal hidden">
-    <div class="modal-box">
-      <button class="modal-close" id="modalClose">✕</button>
-      <div id="modalBody"></div>
-    </div>
-  </div>
-
-  <script src="img.js?v=61"></script>
-  <script src="card-modal.js?v=61"></script>
-  <script src="sync.js?v=61"></script>
-  <script src="escanear.js?v=61"></script>
+  <script src="img.js?v=62"></script>
+  <script src="sync.js?v=62"></script>
+  <script src="escanear.js?v=62"></script>
 </body>
 </html>

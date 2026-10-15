@@ -304,3 +304,10 @@ a { color: var(--accent); }
 
 .cm-quick-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .cm-quick { flex: 1 1 45%; text-decoration: none; text-align: center; }
+
+/* Escáner: sesión y feedback de acierto */
+.cam-flash { position: absolute; inset: 0; background: rgba(62,207,142,.45); pointer-events: none; }
+.session-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 0 8px; }
+.session-head #sessionTitle { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.session-head .price-big { font-size: 18px; margin: 0; }
+.cm-row .cm-qty .yen { display: block; font-size: 10.5px; }
