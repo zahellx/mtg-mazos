@@ -7,7 +7,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Escanear cartas</title>
-  <link rel="stylesheet" href="styles.css?v=66" />
+  <link rel="stylesheet" href="styles.css?v=67" />
 </head>
 <body>
   <header>
@@ -24,8 +24,9 @@
     <section id="scanView">
       <div class="cam-wrap">
         <video id="cam" playsinline muted></video>
-        <div class="cam-card-guide"><div class="cam-art-guide"><span>la ilustración, aquí</span></div></div>
+        <canvas id="marco" class="cam-marco"></canvas>
         <div id="flash" class="cam-flash hidden"></div>
+        <canvas id="lupa" class="cam-lupa" width="120" height="85" title="Lo que está analizando"></canvas>
       </div>
 
       <div class="cam-actions">
@@ -77,8 +78,9 @@
     </section>
   </main>
 
-  <script src="img.js?v=66"></script>
-  <script src="sync.js?v=66"></script>
-  <script src="escanear.js?v=66"></script>
+  <script src="deteccion.js?v=67"></script>
+  <script src="img.js?v=67"></script>
+  <script src="sync.js?v=67"></script>
+  <script src="escanear.js?v=67"></script>
 </body>
 </html>

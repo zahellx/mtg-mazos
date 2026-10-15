@@ -288,6 +288,12 @@ a { color: var(--accent); }
 .cam-art-guide { position: absolute; left: 7.9%; top: 11.2%; width: 84.2%; height: 42.4%;
   border: 1px dashed rgba(62,207,142,.9); border-radius: 4px; display: flex; align-items: flex-end; justify-content: center; }
 .cam-art-guide span { font-size: 10px; color: #fff; background: rgba(0,0,0,.6); padding: 1px 6px; border-radius: 999px; margin-bottom: 3px; }
+/* El rectángulo verde lo dibuja la app donde encuentra la carta. */
+.cam-marco { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* Lupa: el trozo exacto que se está comparando. Si aquí no se ve la
+   ilustración, el problema es el encuadre, no el reconocedor. */
+.cam-lupa { position: absolute; right: 8px; bottom: 8px; width: 96px; height: 68px;
+  border: 1px solid rgba(255,255,255,.55); border-radius: 6px; background: #000; opacity: .92; }
 .cam-actions { display: flex; gap: 8px; margin-top: 12px; }
 
 .scan-card { display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 12px; }

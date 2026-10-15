@@ -148,6 +148,7 @@ const popcount = (x) => { x -= (x >> 1) & 0x55555555; x = (x & 0x33333333) + ((x
 // Proporciones de la ilustración dentro de una carta (marco moderno).
 const ARTE = { x: 0.079, y: 0.112, w: 0.842, h: 0.424 };
 
+const lienzoDet = document.createElement("canvas");
 const lienzo9 = document.createElement("canvas"); lienzo9.width = 9; lienzo9.height = 8;
 const lienzoMed = document.createElement("canvas"); lienzoMed.width = 36; lienzoMed.height = 32;
 
@@ -189,8 +190,8 @@ function distancia(i, h, tope) {
            + popcount(HASHES[p + 6] ^ h[6]) + popcount(HASHES[p + 7] ^ h[7]);
 }
 
-/** Busca la carta más parecida. `margen` es contra la mejor carta DISTINTA. */
-function buscarHuella(h) {
+/** Carta más parecida a la huella (sin calcular el margen: es la mitad del coste). */
+function mejorCarta(h) {
   if (!HASHES) return null;
   const n = NOMBRE_ID.length;
   let mejor = 257, idx = -1;
@@ -198,22 +199,125 @@ function buscarHuella(h) {
     const d = distancia(i, h, mejor);
     if (d < mejor) { mejor = d; idx = i; }
   }
-  if (idx < 0) return null;
+  return idx < 0 ? null : { i: idx, dist: mejor };
+}
+
+/** Distancia a la mejor carta DISTINTA: cuanto más lejos, más seguros estamos. */
+function margenDe(h, idx) {
   const suyo = NOMBRE_ID[idx];
   let otra = 257;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < NOMBRE_ID.length; i++) {
     if (NOMBRE_ID[i] === suyo) continue;
     const d = distancia(i, h, otra);
     if (d < otra) otra = d;
   }
-  return { i: idx, dist: mejor, margen: otra - mejor };
+  return otra;
 }
 
-/** La guía dibujada en pantalla, en coordenadas del vídeo. */
+/** Busca la carta más parecida, con su margen. */
+function buscarHuella(h) {
+  const r = mejorCarta(h);
+  if (!r) return null;
+  return { i: r.i, dist: r.dist, margen: margenDe(h, r.i) - r.dist };
+}
+
+// La guía verde está colocada sobre la CAJA, y el vídeo va con object-fit:cover,
+// o sea recortado para rellenarla. Si calculamos el recorte sobre el vídeo
+// entero analizamos un trozo que no es el que encuadras: con una cámara 16:9
+// en una caja 3:4 solo se ve el ~42% del ancho. Estas constantes son las
+// mismas que .cam-card-guide y .cam-art-guide en styles.css.
+const GUIA = { top: 0.14, alto: 0.72, prop: 0.716 };
+
+/** Región de la ilustración dentro de un marco de carta, con holgura. */
+function zonaArte(m, dz, dy) {
+  return {
+    x: m.x + m.w * (ARTE.x - dz / 2),
+    y: m.y + m.h * (ARTE.y + dy - dz / 2),
+    w: m.w * (ARTE.w + dz),
+    h: m.h * (ARTE.h + dz),
+  };
+}
+
+/** Dibuja encima del vídeo el rectángulo donde ha encontrado la carta. */
+function pintarMarco(v, carta, hallada) {
+  const c = $("marco");
+  if (!c) return;
+  const caja = v.getBoundingClientRect();
+  const cw = Math.round(caja.width), ch = Math.round(caja.height);
+  if (!cw || !ch) return;
+  if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, cw, ch);
+  if (!carta) return;
+  // De coordenadas del vídeo a coordenadas de pantalla (object-fit: cover).
+  const escala = Math.max(cw / v.videoWidth, ch / v.videoHeight);
+  const ox = (cw - v.videoWidth * escala) / 2, oy = (ch - v.videoHeight * escala) / 2;
+  const x = carta.x * escala + ox, y = carta.y * escala + oy;
+  const w = carta.w * escala, h = carta.h * escala;
+  // Verde si la ha encontrado; gris punteado si es solo el encuadre de apoyo.
+  g.strokeStyle = hallada ? "#3ecf8e" : "rgba(255,255,255,.45)";
+  g.lineWidth = 2;
+  if (!hallada) g.setLineDash([8, 6]);
+  g.strokeRect(x, y, w, h);
+  g.setLineDash([]);
+  g.strokeStyle = hallada ? "rgba(62,207,142,.55)" : "rgba(255,255,255,.3)";
+  g.lineWidth = 1; g.setLineDash([5, 4]);
+  g.strokeRect(x + w * ARTE.x, y + h * ARTE.y, w * ARTE.w, h * ARTE.h);
+  g.setLineDash([]);
+}
+
+/** Pinta en la lupa el trozo exacto que se compara, para poder verlo. */
+function pintarLupa(fuente, r) {
+  const c = $("lupa");
+  if (!c) return;
+  c.getContext("2d").drawImage(fuente, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+}
+
+/** Parte del vídeo que de verdad se ve en pantalla (object-fit: cover recorta). */
+function zonaVisible(v) {
+  const caja = v.getBoundingClientRect();
+  const cw = caja.width || v.clientWidth, ch = caja.height || v.clientHeight;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  if (!cw || !ch || !vw || !vh) return { x: 0, y: 0, w: vw, h: vh };
+  const escala = Math.max(cw / vw, ch / vh);
+  const w = Math.min(vw, cw / escala), h = Math.min(vh, ch / escala);
+  return { x: (vw - w) / 2, y: (vh - h) / 2, w, h };
+}
+
+/** Busca la carta dentro de una zona de la imagen, sin encuadre fijo. */
+function detectarEnZona(fuente, vis) {
+  if (!global_deteccion()) return null;
+  const W = Math.min(160, Math.round(vis.w));
+  const H = Math.max(40, Math.round((vis.h * W) / vis.w));
+  if (W < 40) return null;
+  lienzoDet.width = W; lienzoDet.height = H;
+  const c = lienzoDet.getContext("2d", { willReadFrequently: true });
+  c.drawImage(fuente, vis.x, vis.y, vis.w, vis.h, 0, 0, W, H);
+  const d = c.getImageData(0, 0, W, H).data;
+  const gris = new Uint8ClampedArray(W * H);
+  for (let i = 0; i < W * H; i++) gris[i] = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) | 0;
+  const r = global_deteccion().detectarCarta(gris, W, H);
+  if (!r) return null;
+  const k = vis.w / W;
+  return { x: vis.x + r.x * k, y: vis.y + r.y * k, w: r.w * k, h: r.h * k, score: r.score };
+}
+const detectarEnVideo = (v) => detectarEnZona(v, zonaVisible(v));
+const global_deteccion = () => (typeof mtgDeteccion !== "undefined" ? mtgDeteccion : null);
+
+/** La guía dibujada en pantalla, traducida a píxeles del vídeo. */
 function marcoCarta(v) {
-  const W = v.videoWidth, H = v.videoHeight;
-  const h = H * 0.72, w = h * 0.716;          // proporción de una carta real
-  return { x: (W - w) / 2, y: (H - h) / 2, w, h };
+  const caja = v.getBoundingClientRect();
+  const cw = caja.width || v.clientWidth, ch = caja.height || v.clientHeight;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  if (!cw || !ch || !vw || !vh) return { x: 0, y: 0, w: vw, h: vh };
+  // object-fit: cover -> el vídeo se escala al máximo y se recorta centrado.
+  const escala = Math.max(cw / vw, ch / vh);
+  const ox = (cw - vw * escala) / 2, oy = (ch - vh * escala) / 2;
+  const aPx = (x, y) => ({ x: (x - ox) / escala, y: (y - oy) / escala });
+  const gh = ch * GUIA.alto, gw = gh * GUIA.prop;
+  const p1 = aPx((cw - gw) / 2, ch * GUIA.top);
+  const p2 = aPx((cw + gw) / 2, ch * GUIA.top + gh);
+  return { x: p1.x, y: p1.y, w: p2.x - p1.x, h: p2.y - p1.y };
 }
 
 let escaneando = false, cicloId = null;
@@ -248,16 +352,25 @@ async function unCiclo() {
   const v = $("cam");
   if (!v.videoWidth) { seguir(); return; }
   try {
-    const m = marcoCarta(v);
-    // Probamos varios encuadres: así perdona que no centres la carta perfecta.
-    const variantes = [0, -0.02, 0.02, -0.04, 0.04];
-    let top = null;
-    for (const dz of variantes) {
-      const ax = m.x + m.w * (ARTE.x - dz), ay = m.y + m.h * (ARTE.y - dz);
-      const aw = m.w * (ARTE.w + dz * 2), ah = m.h * (ARTE.h + dz * 2);
-      const r = buscarHuella(huella(v, ax, ay, aw, ah));
-      if (r && (!top || r.dist < top.dist)) top = r;
-    }
+    // Buscamos la carta en toda la imagen; si no se ve clara, el marco fijo.
+    const detectada = detectarEnVideo(v);
+    const m = detectada || marcoCarta(v);
+    pintarMarco(v, m, !!detectada);
+
+    // El rectángulo nunca sale exacto y un desvío pequeño en la carta se
+    // multiplica al recortar la ilustración, así que probamos una rejilla de
+    // encuadres (medido: con 25 se reconoce el doble que con 9).
+    let top = null, recorte = zonaArte(m, 0, 0), mejorH = null;
+    for (const dz of [-0.06, -0.03, 0, 0.03, 0.06])
+      for (const dy of [-0.03, -0.015, 0, 0.015, 0.03]) {
+        const z = zonaArte(m, dz, dy);
+        const h = huella(v, z.x, z.y, z.w, z.h);
+        const r = mejorCarta(h);
+        if (r && (!top || r.dist < top.dist)) { top = r; recorte = z; mejorH = h; }
+      }
+    pintarLupa(v, recorte);
+    // El margen solo para la ganadora: calcularlo en cada variante costaría el doble.
+    if (top && mejorH) top.margen = margenDe(mejorH, top.i) - top.dist;
     if (top && top.dist <= MAX_DIST && top.margen >= MIN_MARGEN) {
       const [nombre, set, num] = (INDEX[top.i] || "").split("|");
       // Pedimos dos ciclos seguidos con la misma carta: un fotograma suelto
@@ -273,8 +386,14 @@ async function unCiclo() {
       return;
     }
     candidata = null;
-    if (top && top.dist <= MAX_DIST) status("Dudo entre varias cartas parecidas… mueve un poco la carta.");
-    else if (top) status(`Encuadra la ilustración en el marco… <span class="meta">(parecido ${Math.max(0, Math.round(100 - (top.dist * 100) / 90))}%)</span>`);
+    if (top) {
+      const aviso = top.dist <= MAX_DIST
+        ? "Dudo entre varias cartas parecidas… mueve un poco la carta."
+        : detectada
+          ? "Carta encontrada, afinando… acércala un poco."
+          : "Busco la carta… ponla sobre un fondo liso.";
+      status(`${aviso} <span class="meta">(d ${top.dist} · m ${top.margen})</span>`);
+    }
   } catch (err) { status("❌ " + err.message); }
   seguir();
 }
@@ -460,14 +579,29 @@ async function escanearImagen(file) {
   try {
     await cargarBD();
     const bmp = await createImageBitmap(file);
-    let top = null;
-    // La carta puede ocupar todo el encuadre o parte: probamos varias escalas.
-    for (const f of [1, 0.9, 0.8]) {
-      const w = bmp.width * f, h = bmp.height * f;
-      const x = (bmp.width - w) / 2, y = (bmp.height - h) / 2;
-      const r = buscarHuella(huella(bmp, x + w * ARTE.x, y + h * ARTE.y, w * ARTE.w, h * ARTE.h));
-      if (r && (!top || r.dist < top.dist)) top = r;
+    const cajas = [];
+    // Primero, dónde está la carta en la foto.
+    const hallada = detectarEnZona(bmp, { x: 0, y: 0, w: bmp.width, h: bmp.height });
+    if (hallada) cajas.push(hallada);
+    // Por si la detección falla: cajas con forma de carta a varios tamaños.
+    for (const f of [1, 0.9, 0.8, 0.7]) {
+      const h = Math.min(bmp.height, bmp.width / 0.716) * f, w = h * 0.716;
+      cajas.push({ x: (bmp.width - w) / 2, y: (bmp.height - h) / 2, w, h });
     }
+    let top = null, mejorH = null;
+    for (const caja of cajas)
+      for (const dz of [-0.06, -0.03, 0, 0.03, 0.06])
+        for (const dy of [-0.03, 0, 0.03]) {
+          const z = zonaArte(caja, dz, dy);
+          const h = huella(bmp, z.x, z.y, z.w, z.h);
+          const r = mejorCarta(h);
+          if (r && (!top || r.dist < top.dist)) { top = r; mejorH = h; }
+        }
+    // Y por si la foto ya es solo la ilustración, recortada por ti.
+    const hArte = huella(bmp, 0, 0, bmp.width, bmp.height);
+    const rArte = mejorCarta(hArte);
+    if (rArte && (!top || rArte.dist < top.dist)) { top = rArte; mejorH = hArte; }
+    if (top && mejorH) top.margen = margenDe(mejorH, top.i) - top.dist;
     if (top && top.dist <= MAX_DIST && top.margen >= MIN_MARGEN) {
       const [nombre, set, num] = (INDEX[top.i] || "").split("|");
       await acertadoPorArte(nombre, set, num, top);
