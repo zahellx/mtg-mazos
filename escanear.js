@@ -149,6 +149,10 @@ const popcount = (x) => { x -= (x >> 1) & 0x55555555; x = (x & 0x33333333) + ((x
 const ARTE = { x: 0.079, y: 0.112, w: 0.842, h: 0.424 };
 
 const lienzoDet = document.createElement("canvas");
+// La carta, pintada una sola vez por fotograma: los 25 encuadres se recortan
+// de aquí. Recortar 25 veces del vídeo a tamaño completo era lo que de verdad
+// hacía lento el escaneo (50 drawImage grandes por fotograma).
+const lienzoCarta = document.createElement("canvas"); lienzoCarta.width = 288; lienzoCarta.height = 402;
 const lienzo9 = document.createElement("canvas"); lienzo9.width = 9; lienzo9.height = 8;
 const lienzoMed = document.createElement("canvas"); lienzoMed.width = 36; lienzoMed.height = 32;
 
@@ -190,12 +194,33 @@ function distancia(i, h, tope) {
            + popcount(HASHES[p + 6] ^ h[6]) + popcount(HASHES[p + 7] ^ h[7]);
 }
 
-/** Carta más parecida a la huella (sin calcular el margen: es la mitad del coste). */
-function mejorCarta(h) {
-  if (!HASHES) return null;
+// Filtro barato: con media huella (128 bits) se descarta el 87% de la base.
+// Medido con recortes muy desviados, la carta correcta nunca pasó de 43, así
+// que cortar en 52 deja margen de sobra.
+const CORTE_CORTA = 52;
+
+/** Preselección con media huella, para no recorrer las 54.788 en cada encuadre. */
+function listaCorta(h) {
   const n = NOMBRE_ID.length;
-  let mejor = 257, idx = -1;
+  const out = new Uint32Array(n);
+  let k = 0;
   for (let i = 0; i < n; i++) {
+    const p = i * PALABRAS;
+    const d = popcount(HASHES[p] ^ h[0]) + popcount(HASHES[p + 1] ^ h[1])
+            + popcount(HASHES[p + 2] ^ h[2]) + popcount(HASHES[p + 3] ^ h[3]);
+    if (d <= CORTE_CORTA) out[k++] = i;
+  }
+  // Si queda demasiado corta, algo raro pasa: mejor mirarlo todo.
+  return k < 200 ? null : out.subarray(0, k);
+}
+
+/** Carta más parecida a la huella (sin calcular el margen: es la mitad del coste). */
+function mejorCarta(h, lista) {
+  if (!HASHES) return null;
+  const n = lista ? lista.length : NOMBRE_ID.length;
+  let mejor = 257, idx = -1;
+  for (let j = 0; j < n; j++) {
+    const i = lista ? lista[j] : j;
     const d = distancia(i, h, mejor);
     if (d < mejor) { mejor = d; idx = i; }
   }
@@ -264,6 +289,17 @@ function pintarMarco(v, carta, hallada) {
   g.lineWidth = 1; g.setLineDash([5, 4]);
   g.strokeRect(x + w * ARTE.x, y + h * ARTE.y, w * ARTE.w, h * ARTE.h);
   g.setLineDash([]);
+}
+
+/** Pinta la carta detectada en un lienzo propio y devuelve su rectángulo. */
+function pintarCarta(v, m) {
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const x = Math.max(0, Math.min(m.x, vw - 2)), y = Math.max(0, Math.min(m.y, vh - 2));
+  const w = Math.max(2, Math.min(m.w, vw - x)), h = Math.max(2, Math.min(m.h, vh - y));
+  const c = lienzoCarta.getContext("2d", { willReadFrequently: true });
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+  c.drawImage(v, x, y, w, h, 0, 0, lienzoCarta.width, lienzoCarta.height);
+  return { x: 0, y: 0, w: lienzoCarta.width, h: lienzoCarta.height };
 }
 
 /** Pinta en la lupa el trozo exacto que se compara, para poder verlo. */
@@ -360,16 +396,20 @@ async function unCiclo() {
     // El rectángulo nunca sale exacto y un desvío pequeño en la carta se
     // multiplica al recortar la ilustración, así que probamos una rejilla de
     // encuadres (medido: con 25 se reconoce el doble que con 9).
-    let top = null, recorte = zonaArte(m, 0, 0), mejorH = null;
+    const carta = pintarCarta(v, m);
+    let top = null, recorte = zonaArte(carta, 0, 0), mejorH = null;
+    // Preselección con el encuadre central; los 25 se comparan solo contra ella.
+    const corta = listaCorta(huella(lienzoCarta, recorte.x, recorte.y, recorte.w, recorte.h));
     for (const dz of [-0.06, -0.03, 0, 0.03, 0.06])
       for (const dy of [-0.03, -0.015, 0, 0.015, 0.03]) {
-        const z = zonaArte(m, dz, dy);
-        const h = huella(v, z.x, z.y, z.w, z.h);
-        const r = mejorCarta(h);
+        const z = zonaArte(carta, dz, dy);
+        const h = huella(lienzoCarta, z.x, z.y, z.w, z.h);
+        const r = mejorCarta(h, corta);
         if (r && (!top || r.dist < top.dist)) { top = r; recorte = z; mejorH = h; }
       }
-    pintarLupa(v, recorte);
-    // El margen solo para la ganadora: calcularlo en cada variante costaría el doble.
+    pintarLupa(lienzoCarta, recorte);
+    // El margen SIEMPRE contra la base entera: si no, una carta gemela fuera
+    // de la preselección pasaría desapercibida.
     if (top && mejorH) top.margen = margenDe(mejorH, top.i) - top.dist;
     if (top && top.dist <= MAX_DIST && top.margen >= MIN_MARGEN) {
       const [nombre, set, num] = (INDEX[top.i] || "").split("|");
@@ -589,17 +629,20 @@ async function escanearImagen(file) {
       cajas.push({ x: (bmp.width - w) / 2, y: (bmp.height - h) / 2, w, h });
     }
     let top = null, mejorH = null;
+    // Preselección con la mejor caja: aquí se hacían 60 búsquedas completas.
+    const z0 = zonaArte(cajas[0], 0, 0);
+    const corta = listaCorta(huella(bmp, z0.x, z0.y, z0.w, z0.h));
     for (const caja of cajas)
       for (const dz of [-0.06, -0.03, 0, 0.03, 0.06])
         for (const dy of [-0.03, 0, 0.03]) {
           const z = zonaArte(caja, dz, dy);
           const h = huella(bmp, z.x, z.y, z.w, z.h);
-          const r = mejorCarta(h);
+          const r = mejorCarta(h, corta);
           if (r && (!top || r.dist < top.dist)) { top = r; mejorH = h; }
         }
     // Y por si la foto ya es solo la ilustración, recortada por ti.
     const hArte = huella(bmp, 0, 0, bmp.width, bmp.height);
-    const rArte = mejorCarta(hArte);
+    const rArte = mejorCarta(hArte, corta);
     if (rArte && (!top || rArte.dist < top.dist)) { top = rArte; mejorH = hArte; }
     if (top && mejorH) top.margen = margenDe(mejorH, top.i) - top.dist;
     if (top && top.dist <= MAX_DIST && top.margen >= MIN_MARGEN) {
