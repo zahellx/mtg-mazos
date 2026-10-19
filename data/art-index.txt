@@ -54786,3 +54786,153 @@ Celestine Reef|dci|42
 Horned Troll|8ed|257
 Faerie Bladecrafter|woc|14
 Exultant Skymarcher|rix|7
+Emrakul, the Exigent Doom // Emrakul, the Exigent Doom|afra|1
+Something Worth Saving // Something Worth Saving|afra|22
+The Theorist, Jace Beleren // The Theorist, Jace Beleren|afra|47
+Uncover the Moon-Letters // Uncover the Moon-Letters|ahob|13
+Way of the Warlord // Way of the Warlord|afra|33
+Tethermage's Advantage // Tethermage's Advantage|afra|23
+Uneasy Partings // Uneasy Partings|ahob|14
+Unholy Heat|slc|70
+Aragorn, the Uniter // Aragorn, the Uniter|ahob|34
+Hall of Echoes // Hall of Echoes|afra|54
+Flickering Hound // Flickering Hound|afra|2
+Deserted Beach // Deserted Beach|afra|30
+Simulacrum Shaper // Simulacrum Shaper|afra|38
+Ravenhill Flock // Ravenhill Flock|ahob|11
+Collective Effort|slc|82
+Extrapolate the Impossible // Extrapolate the Impossible|afra|12
+Proctor of Potential // Proctor of Potential|afra|44
+Vindictive Triumph // Vindictive Triumph|afra|29
+Dawn of a New Age // Dawn of a New Age|ahob|26
+Beta Ray Bill|slc|78
+Tide of Fury and Disorder // Tide of Fury and Disorder|ahob|53
+Champion's Helm|slc|64
+Smaug's Fury // Smaug's Fury|ahob|18
+Villainous Wrath|slc|71
+Signal the Onslaught // Signal the Onslaught|ahob|52
+Flourishing Grapple // Flourishing Grapple|afra|51
+Mjölnir, Storm Hammer|slc|62
+Belladonna Took // Belladonna Took|ahob|2
+Primal Might|slc|73
+Court of Bounty|slc|68
+Lake-town // Lake-town|ahob|24
+Dragon-Cursed Halls // Dragon-Cursed Halls|ahoc|8
+Rivendell // Rivendell|ahob|40
+Damning Verdict|slc|72
+Smaug the Magnificent // Smaug the Magnificent|ahob|43
+Unbreakable Formation|slc|56
+Countersculpt // Countersculpt|afra|6
+Tarmogoyf // Tarmogoyf|afra|52
+Dancing from Dark to Dawn // Dancing from Dark to Dawn|ahob|21
+Repurposed Enforcer // Repurposed Enforcer|afra|4
+Overwrite the Multiverse // Overwrite the Multiverse|afra|13
+Tom, Bert, and William // Tom, Bert, and William|ahob|25
+Solve for Disappointment // Solve for Disappointment|afra|14
+Ferocity of the Hunt // Ferocity of the Hunt|afra|26
+Palantír of Orthanc // Palantír of Orthanc|ahob|37
+Thorin, Company's Leader // Thorin, Company's Leader|ahob|47
+Bard's Attendant // Bard's Attendant|ahob|50
+Vigor|slc|61
+Gandalf, Party Guest // Gandalf, Party Guest|ahoc|2
+Confusticate and Bebother // Confusticate and Bebother|ahob|8
+Struggle of Howling Steel // Struggle of Howling Steel|ahob|51
+Identity Echo // Identity Echo|afra|18
+Call Forth the Tempest // Call Forth the Tempest|ahob|33
+Sauron, the Lidless Eye // Sauron, the Lidless Eye|ahob|36
+Fierce Guardianship|slc|55
+Molten Duplication|slc|54
+Omnipresence // Omnipresence|afra|21
+Thorin, Mountain-king // Thorin, Mountain-king|ahob|19
+Plains (Summer) // Plains (Summer)|ahob|45
+Galadriel's Dismissal // Galadriel's Dismissal|ahob|29
+Ori, Plate Stacker // Ori, Plate Stacker|ahoc|6
+Riddles in the Dark // Riddles in the Dark|ahob|12
+Rise of the Deathbringer // Rise of the Deathbringer|afra|36
+Devastation|slc|69
+Force of Virtue|slc|65
+Kindred Judgment // Kindred Judgment|afra|3
+Tam, the Possibility // Tam, the Possibility|afra|34
+Master of Barbs // Master of Barbs|afra|41
+Beorn's Hospitality // Beorn's Hospitality|ahob|20
+Precise Redaction // Precise Redaction|afra|46
+Bilbo's Burglaring // Bilbo's Burglaring|ahoc|10
+Vraska's Final Mercy // Vraska's Final Mercy|afra|15
+Curse-Marred Demon // Curse-Marred Demon|afra|37
+Ingris Stingerquill // Ingris Stingerquill|afra|42
+Bag End Banquet // Bag End Banquet|ahoc|5
+Theorist's Proxy // Theorist's Proxy|afra|8
+Heroic Intervention|slc|66
+Bilbo, Fellow Conspirator // Bilbo, Fellow Conspirator|ahoc|4
+Jace's Machinations // Jace's Machinations|afra|40
+Thranduil the Strategist // Thranduil the Strategist|ahob|49
+Grim Repriser // Grim Repriser|afra|27
+Troop of Ponies // Troop of Ponies|ahob|1
+Fiery Confluence|slc|76
+Necklace of Girion // Necklace of Girion|ahoc|12
+Unsummon // Unsummon|afra|9
+Rogue's Gloves|slc|77
+Wizard's Staff // Wizard's Staff|ahob|15
+Elrond, Moon-Reader // Elrond, Moon-Reader|ahob|9
+Violent Echoes // Violent Echoes|afra|20
+Dark Matter Manipulator // Dark Matter Manipulator|afra|11
+Draconic Visitor // Draconic Visitor|afra|49
+Return to the Light Realms // Return to the Light Realms|afra|35
+With Great Power . . .|slc|60
+The Gaffer // The Gaffer|ahob|28
+Witch-king of Angmar // Witch-king of Angmar|ahob|31
+The Eagles Are Coming! // The Eagles Are Coming!|ahob|3
+Tainted Pact|slc|59
+Lightning Bolt|slc|83
+Genesis Wave|slc|75
+Avatar of Burgeoning Echoes // Avatar of Burgeoning Echoes|afra|24
+Gleaming Splendor // Gleaming Splendor|ahob|4
+Denzilore Fatehold // Denzilore Fatehold|afra|25
+Snuff Out|slc|79
+Fíli and Kíli, Joyous // Fíli and Kíli, Joyous|ahoc|1
+Dáin of the Ancient Halls // Dáin of the Ancient Halls|ahob|48
+Smaug, the Great Calamity // Smaug, the Great Calamity|ahob|17
+Bilbo, Thief in the Night // Bilbo, Thief in the Night|ahob|7
+Thorin, King of Durin's Folk // Thorin, King of Durin's Folk|ahoc|3
+Mirkwood Meditator // Mirkwood Meditator|ahob|10
+Sphinx of False Conclusions // Sphinx of False Conclusions|afra|7
+Plains // Plains|ahob|41
+Elvenking's Halls // Elvenking's Halls|ahob|23
+Flowering of the White Tree // Flowering of the White Tree|ahob|27
+Long-Lost Lances // Long-Lost Lances|ahoc|7
+Saruman of Many Colors // Saruman of Many Colors|ahob|35
+Titanic Ultimatum|slc|80
+Fighter Class|slc|67
+Return to the Light Realms // Return to the Light Realms|afra|5
+Dragon's Desire // Dragon's Desire|ahoc|11
+Craterclaw Colossus // Craterclaw Colossus|afra|16
+Ajani's Anguish // Ajani's Anguish|afra|48
+Null Summoner // Null Summoner|afra|43
+Garruk, Veiled Butcher // Garruk, Curse Breaker // Garruk, Veiled Butcher // Garruk, Curse Breaker|afra|32
+Reverent Howl // Reverent Howl|ahob|16
+Face Yourself // Face Yourself|afra|50
+Doctor Strange, Master of Magic|slc|63
+Magnificent End // Magnificent End|ahob|5
+Witch-king, Bringer of Ruin // Witch-king, Bringer of Ruin|ahob|32
+Gandalf, Shadow's Foe // Gandalf, Shadow's Foe|ahob|46
+Orcish Bowmasters // Orcish Bowmasters|ahob|30
+Cruel Calculations // Cruel Calculations|afra|39
+An Unexpected Party // An Unexpected Party|ahob|6
+Flickering Hound // Flickering Hound|afra|45
+Mind Meanderer // Mind Meanderer|afra|28
+Shipwreck Marsh // Shipwreck Marsh|afra|31
+Opposition Agent|slc|81
+Thranduil, the Elvenking // Thranduil, the Elvenking|ahob|22
+Cast Away Doubt // Cast Away Doubt|afra|10
+Most Decrepit Old Bird // Most Decrepit Old Bird|ahob|42
+Verdant Kraken // Verdant Kraken|afra|53
+Hallway Heckler // Hallway Heckler|afra|17
+Smaug the Impenetrable // Smaug the Impenetrable|ahoc|9
+Biorhythm|slc|58
+The Arkenstone // The Arkenstone|ahob|44
+Minas Tirith // Minas Tirith|ahob|38
+Mount Gundabad Mobilizes // Mount Gundabad Mobilizes|ahob|54
+Damn|slc|74
+Tether Technician // Tether Technician|afra|19
+Timber Protector|slc|57
+Mount Doom // Mount Doom|ahob|39
