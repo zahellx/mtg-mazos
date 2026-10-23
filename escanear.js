@@ -196,7 +196,10 @@ function cargarBD() {
 const popcount = (x) => { x -= (x >> 1) & 0x55555555; x = (x & 0x33333333) + ((x >> 2) & 0x33333333); x = (x + (x >> 4)) & 0x0f0f0f0f; return (x * 0x01010101) >> 24; };
 
 // Proporciones de la ilustración dentro de una carta (marco moderno).
-const ARTE = { x: 0.079, y: 0.112, w: 0.842, h: 0.424 };
+// La y salió calibrada contra la propia base: las huellas vienen del art_crop
+// de Scryfall y con 0.112 el recorte quedaba un pelín alto. Medido sobre 70
+// cartas, pasar a 0.120 baja la distancia mediana de 22 a 11 (media 31,4 -> 24).
+const ARTE = { x: 0.079, y: 0.120, w: 0.842, h: 0.424 };
 
 const lienzoDet = document.createElement("canvas");
 // La carta, pintada una sola vez por fotograma: los 25 encuadres se recortan
