@@ -300,6 +300,15 @@ a { color: var(--accent); }
 .ses-item:last-child { border-bottom: 0; }
 .ses-detalle { padding: 0 6px 12px; background: rgba(255,255,255,.02); }
 .cm-badge.des { background: rgba(62,207,142,.18); color: var(--ok); }
+/* Precios máximos por idioma */
+.des-carta { border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px; }
+.des-edit { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 56px; flex-wrap: wrap; }
+.des-idioma { font-size: 12.5px; color: var(--muted); min-width: 70px; }
+.des-conv { font-size: 12px; color: var(--text); }
+.des-fila { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.des-ok { font-weight: 700; }
+.des-ok.good { color: var(--ok); }
+.des-ok.bad { color: #e0607e; }
 
 .scan-card { display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 12px; }
 .scan-img { width: 110px; border-radius: 8px; flex-shrink: 0; }

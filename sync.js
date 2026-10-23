@@ -8,7 +8,7 @@
   // Versión de ESTA copia instalada (va en los ficheros que cachea el service
   // worker, así delata si el dispositivo se quedó con una versión vieja).
   // Se sube a la vez que CACHE en sw.js.
-  const APP_VERSION = "v68";
+  const APP_VERSION = "v69";
   const CFG_KEY = "mtg-sync-config";
   const KEYTS_KEY = "mtg-sync-keyts";   // {key: ts} última versión conocida por clave
   const SHADOW_KEY = "mtg-sync-shadow"; // {key: hash} para detectar cambios locales
@@ -19,6 +19,7 @@
     "mtg-orders-v1",
     "mtg-cardmarket-v1",
     "mtg-deseados-v1",
+    "mtg-fx-manual-v1",
     "mtg-proxies-v1",
     "mtg-sell-v1",
     "mtg-scan-presets-v1",

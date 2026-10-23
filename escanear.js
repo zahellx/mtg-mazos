@@ -6,7 +6,8 @@ const CARDMARKET_KEY = "mtg-cardmarket-v1";   // lista de Cardmarket (compartida
 const DESEADOS_KEY = "mtg-deseados-v1";       // deseados: {nombre: {eur: precio máximo}}
 const PRESETS_KEY = "mtg-scan-presets-v1";    // botones rápidos de filtros
 const PENDING_KEY = "mtg-scan-pending-v1";    // lista de pendientes escaneadas
-const FX_KEY = "mtg-fx-v1";                   // cambio EUR->JPY cacheado
+const FX_KEY = "mtg-fx-v1";                   // cambio EUR->JPY automático
+const FX_MANUAL_KEY = "mtg-fx-manual-v1";     // el cambio que pones tú (manda sobre el automático)
 const NAMES_KEY = "mtg-card-names-v1";        // catálogo de nombres de Scryfall
 
 const $ = (id) => document.getElementById(id);
@@ -20,13 +21,32 @@ let presets = load(PRESETS_KEY, []);
 let pending = load(PENDING_KEY, []);
 let names = [];           // catálogo de nombres
 let fx = load(FX_KEY, null);
+let fxManual = load(FX_MANUAL_KEY, null);
+
+// Idiomas de Cardmarket, para poner un precio máximo por idioma.
+const IDIOMAS = { any: "Cualquiera", en: "Inglés", ja: "Japonés", es: "Español",
+  de: "Alemán", fr: "Francés", it: "Italiano", pt: "Portugués", ru: "Ruso", ko: "Coreano", zh: "Chino" };
 
 // La wishlist admite formato antiguo (número) y nuevo ({q, eur}).
 const wishQty = (v) => (typeof v === "object" && v ? (v.q || 1) : (typeof v === "number" ? v : 1));
 const wishEur = (v) => (typeof v === "object" && v && v.eur ? Number(v.eur) : null);
 const inWishlist = (name) => cardmarket[name] != null;
 const enDeseados = (name) => deseados[name] != null;
-const topeDeseado = (name) => (deseados[name] && deseados[name].eur != null ? Number(deseados[name].eur) : null);
+/** Precios máximos por idioma. Admite el formato viejo (un solo tope en €). */
+function preciosDe(name) {
+  const d = deseados[name];
+  if (!d) return {};
+  if (d.precios) return d.precios;
+  return d.eur != null ? { any: { v: Number(d.eur), m: "eur" } } : {};
+}
+
+/** Tope de referencia en euros: el de "cualquiera" si lo hay, si no el más bajo. */
+function topeDeseado(name) {
+  const pr = preciosDe(name);
+  if (pr.any && aEur(pr.any) != null) return aEur(pr.any);
+  const vals = Object.values(pr).map(aEur).filter((v) => v != null);
+  return vals.length ? Math.min(...vals) : null;
+}
 /** ¿La carta está en alguna de las dos listas? */
 const enAlgunaLista = (name) => inWishlist(name) || enDeseados(name);
 
@@ -40,8 +60,27 @@ async function getFx() {
   } catch (_) {}
   return fx ? fx.jpy : null;
 }
+/** El cambio que manda: el tuyo si lo has puesto; si no, el automático. */
+const tasa = () => (fxManual != null ? Number(fxManual) : (fx ? fx.jpy : null));
 const eur = (v) => (v == null ? "—" : `${Number(v).toFixed(2)} €`);
-const yen = (v) => (v == null || !fx ? "" : `≈ ¥${Math.round(Number(v) * fx.jpy).toLocaleString("es-ES")}`);
+const yen = (v) => (v == null || !tasa() ? "" : `≈ ¥${Math.round(Number(v) * tasa()).toLocaleString("es-ES")}`);
+
+/** Un precio guardado, pasado a euros (si lo pusiste en yenes, lo convierte). */
+function aEur(p) {
+  if (!p || p.v == null) return null;
+  const v = Number(p.v);
+  if (p.m === "jpy") { const t = tasa(); return t ? v / t : null; }
+  return v;
+}
+
+/** Un precio guardado, en las dos monedas. */
+function ambas(p) {
+  const e = aEur(p);
+  if (e == null) return "—";
+  return p.m === "jpy"
+    ? `¥${Math.round(Number(p.v)).toLocaleString("es-ES")} <span class="yen">≈ ${eur(e)}</span>`
+    : `${eur(e)} <span class="yen">${yen(e)}</span>`;
+}
 
 // ── Catálogo de nombres (para acertar con el OCR) ─────────────────────────────
 async function loadNames() {
@@ -116,6 +155,11 @@ let cargandoBD = null;
 // Con esto entra el 98% de las buenas y no cuela ninguna mala.
 const MAX_DIST = 45;
 const MIN_MARGEN = 12;
+// Y un rango donde no hace falta confirmar: medido sobre 220 fotogramas con
+// error de detección, aquí dentro no hubo ni una equivocada (y cubre la mitad
+// de los aciertos), así que esas se dan por buenas al primer fotograma.
+const SEGURO_DIST = 30;
+const SEGURO_MARGEN = 24;
 
 function cargarBD() {
   if (cargandoBD) return cargandoBD;
@@ -221,10 +265,16 @@ function listaCorta(h) {
 }
 
 /** Carta más parecida a la huella (sin calcular el margen: es la mitad del coste). */
-function mejorCarta(h, lista) {
+function mejorCarta(h, lista, previa) {
   if (!HASHES) return null;
-  const n = lista ? lista.length : NOMBRE_ID.length;
   let mejor = 257, idx = -1;
+  // Empezamos por la del fotograma anterior: si la carta sigue delante, el
+  // tope baja de golpe y el descarte a media huella tira casi todo lo demás.
+  if (previa != null && previa >= 0 && previa < NOMBRE_ID.length) {
+    mejor = distancia(previa, h, 257);
+    idx = previa;
+  }
+  const n = lista ? lista.length : NOMBRE_ID.length;
   for (let j = 0; j < n; j++) {
     const i = lista ? lista[j] : j;
     const d = distancia(i, h, mejor);
@@ -365,6 +415,7 @@ function marcoCarta(v) {
 let escaneando = false, cicloId = null;
 let ultimaId = null, ultimaTs = 0;   // para no apuntar dos veces la misma carta
 let candidata = null;                // carta vista en el ciclo anterior
+let previaIdx = null;                // su índice, para acelerar la búsqueda
 
 /** Reprograma el siguiente ciclo de escaneo. */
 function seguir(ms = 120) {
@@ -410,18 +461,21 @@ async function unCiclo() {
       for (const dy of [-0.03, -0.015, 0, 0.015, 0.03]) {
         const z = zonaArte(carta, dz, dy);
         const h = huella(lienzoCarta, z.x, z.y, z.w, z.h);
-        const r = mejorCarta(h, corta);
+        const r = mejorCarta(h, corta, previaIdx);
         if (r && (!top || r.dist < top.dist)) { top = r; recorte = z; mejorH = h; }
       }
     pintarLupa(lienzoCarta, recorte);
+    previaIdx = top ? top.i : null;
     // El margen SIEMPRE contra la base entera: si no, una carta gemela fuera
     // de la preselección pasaría desapercibida.
     if (top && mejorH) top.margen = margenDe(mejorH, top.i) - top.dist;
     if (top && top.dist <= MAX_DIST && top.margen >= MIN_MARGEN) {
       const [nombre, set, num] = (INDEX[top.i] || "").split("|");
-      // Pedimos dos ciclos seguidos con la misma carta: un fotograma suelto
-      // con reflejo o movido puede dar cualquier cosa.
-      if (nombre && nombre === candidata) {
+      // Dos ciclos seguidos con la misma carta, salvo que el parecido sea tan
+      // bueno que no haya duda: un fotograma suelto movido puede dar cualquier
+      // cosa, pero no dentro del rango seguro.
+      const seguro = top.dist <= SEGURO_DIST && top.margen >= SEGURO_MARGEN;
+      if (nombre && (seguro || nombre === candidata)) {
         candidata = null;
         await acertadoPorArte(nombre, set, num, top);
         return;
@@ -519,6 +573,22 @@ function cmLink(card, preset) {
   return u.toString();
 }
 
+/** Los topes por idioma de una carta, comparados con el precio de referencia. */
+function filasPrecio(name, precio) {
+  const pr = preciosDe(name);
+  const claves = Object.keys(IDIOMAS).filter((k) => pr[k]);
+  if (!claves.length) return "";
+  return claves.map((k) => {
+    const e = aEur(pr[k]);
+    const ok = e != null && precio != null ? precio <= e : null;
+    return `<div class="des-fila">
+      <span class="des-idioma">${IDIOMAS[k]}</span>
+      <span>${ambas(pr[k])}</span>
+      ${ok === null ? "" : `<span class="des-ok ${ok ? "good" : "bad"}">${ok ? "✓" : "⚠"}</span>`}
+    </div>`;
+  }).join("");
+}
+
 function renderCard(card, caja) {
   caja = caja || $("detail");
   const precio = card.prices && card.prices.eur ? Number(card.prices.eur) : null;
@@ -541,9 +611,7 @@ function renderCard(card, caja) {
     </div>` : "") + (tope != null || enDeseados(card.name) ? `
     <div class="wish-alert">
       <div class="wish-title">💚 ¡Está en tus deseados!</div>
-      <div>${tope != null
-        ? `Pagas como mucho <b>${eur(tope)}</b> <span class="yen">${yen(tope)}</span>` : "Sin precio máximo puesto"}</div>
-      ${veredicto(tope)}
+      ${filasPrecio(card.name, precio) || "<div>Sin precio máximo puesto</div>"}
     </div>` : "");
 
   const botones = presets.length
@@ -576,11 +644,12 @@ function renderCard(card, caja) {
   const des = caja.querySelector(".js-addDes");
   if (des) des.onclick = () => {
     if (enDeseados(card.name)) return;
-    const t = prompt(`Precio máximo que quieres pagar por ${card.name} (€):`, precio != null ? precio.toFixed(2) : "");
+    const t = prompt(`Precio máximo por ${card.name}, en € y para cualquier idioma.\nLuego puedes afinar por idioma y en yenes desde 💚.`,
+      precio != null ? precio.toFixed(2) : "");
     if (t === null) return;
     const v = Number(String(t).replace(",", "."));
-    deseados[card.name] = { eur: isFinite(v) && v > 0 ? v : null };
-    save(DESEADOS_KEY, deseados);
+    if (!deseados[card.name]) deseados[card.name] = { precios: {} };
+    if (isFinite(v) && v > 0) ponPrecio(card.name, "any", v, "eur"); else save(DESEADOS_KEY, deseados);
     renderCard(card, caja);
     renderPending();
     renderDeseados();
@@ -645,37 +714,89 @@ function renderPending() {
 }
 
 // ── Ajustes: presets de filtros de Cardmarket ─────────────────────────────────
-/** Lista de deseados: carta + precio máximo que quieres pagar. */
+/** Guarda un precio de una carta para un idioma (v=null lo borra). */
+function ponPrecio(nombre, idioma, v, moneda) {
+  const pr = Object.assign({}, preciosDe(nombre));
+  if (v == null || !isFinite(v) || v <= 0) delete pr[idioma];
+  else pr[idioma] = { v, m: moneda === "jpy" ? "jpy" : "eur" };
+  deseados[nombre] = { precios: pr };
+  save(DESEADOS_KEY, deseados);
+}
+
+/** Lista de deseados: cada carta con su precio máximo por idioma. */
 function renderDeseados() {
   const caja = $("desList");
   if (!caja) return;
+  pintarTasa();
   const nombres = Object.keys(deseados).sort((a, b) => a.localeCompare(b));
   $("desCount").textContent = nombres.length ? `${nombres.length} carta(s)` : "Vacía";
   caja.innerHTML = nombres.length ? nombres.map((n) => {
-    const t = topeDeseado(n);
-    return `<div class="cm-row">
-      <img loading="lazy" data-name="${esc(n)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(n)}" />
-      <div class="cm-name">${esc(n)}</div>
-      <div class="cm-qty"><button class="btn secondary js-precio" data-n="${esc(n)}" style="width:auto;padding:4px 8px;font-size:13px">
-        ${t != null ? eur(t) : "sin tope"}</button>
-        <div class="yen">${t != null ? yen(t) : ""}</div></div>
-      <button class="cm-x" data-desdel="${esc(n)}" title="Quitar">×</button>
+    const pr = preciosDe(n);
+    const puestos = Object.keys(IDIOMAS).filter((k) => pr[k]);
+    const libres = Object.keys(IDIOMAS).filter((k) => !pr[k]);
+    return `<div class="des-carta">
+      <div class="cm-row">
+        <img loading="lazy" data-name="${esc(n)}" src="${window.mtgImg ? window.mtgImg.placeholder : ""}" alt="${esc(n)}" />
+        <div class="cm-name">${esc(n)}<div class="note">${puestos.length ? puestos.length + " idioma(s)" : "sin precio"}</div></div>
+        <button class="cm-x" data-desdel="${esc(n)}" title="Quitar">×</button>
+      </div>
+      ${puestos.map((k) => `
+        <div class="des-edit">
+          <span class="des-idioma">${IDIOMAS[k]}</span>
+          <input type="number" class="mini-input js-v" data-n="${esc(n)}" data-k="${k}" value="${pr[k].v}" min="0" step="0.5" inputmode="decimal" />
+          <select class="js-m" data-n="${esc(n)}" data-k="${k}">
+            <option value="eur"${pr[k].m !== "jpy" ? " selected" : ""}>€</option>
+            <option value="jpy"${pr[k].m === "jpy" ? " selected" : ""}>¥</option>
+          </select>
+          <span class="des-conv">${ambas(pr[k])}</span>
+          <button class="cm-x js-quitar" data-n="${esc(n)}" data-k="${k}" title="Quitar idioma">×</button>
+        </div>`).join("")}
+      ${libres.length ? `<div class="des-edit">
+        <select class="js-add" data-n="${esc(n)}">
+          <option value="">➕ añadir idioma…</option>
+          ${libres.map((k) => `<option value="${k}">${IDIOMAS[k]}</option>`).join("")}
+        </select></div>` : ""}
     </div>`;
-  }).join("") : `<div class="empty">Nada en deseados todavía. Añade cartas desde su ficha o aquí abajo.</div>`;
+  }).join("") : `<div class="empty">Nada en deseados todavía. Añade cartas desde su ficha o aquí arriba.</div>`;
   if (window.mtgImg) window.mtgImg.load(caja);
-  caja.querySelectorAll(".js-precio").forEach((b) => {
-    b.onclick = () => {
-      const n = b.dataset.n, t = topeDeseado(n);
-      const v = prompt(`Precio máximo por ${n} (€):`, t != null ? String(t) : "");
-      if (v === null) return;
-      const num = Number(String(v).replace(",", "."));
-      deseados[n] = { eur: isFinite(num) && num > 0 ? num : null };
-      save(DESEADOS_KEY, deseados); renderDeseados(); renderPending();
+
+  const refresca = () => { renderDeseados(); renderPending(); };
+  caja.querySelectorAll(".js-v").forEach((el) => {
+    el.onchange = () => {
+      const m = caja.querySelector(`.js-m[data-n="${CSS.escape(el.dataset.n)}"][data-k="${el.dataset.k}"]`);
+      ponPrecio(el.dataset.n, el.dataset.k, Number(String(el.value).replace(",", ".")), m ? m.value : "eur");
+      refresca();
+    };
+  });
+  caja.querySelectorAll(".js-m").forEach((el) => {
+    el.onchange = () => {
+      const v = caja.querySelector(`.js-v[data-n="${CSS.escape(el.dataset.n)}"][data-k="${el.dataset.k}"]`);
+      ponPrecio(el.dataset.n, el.dataset.k, Number(String(v ? v.value : "").replace(",", ".")), el.value);
+      refresca();
+    };
+  });
+  caja.querySelectorAll(".js-quitar").forEach((b) => {
+    b.onclick = () => { ponPrecio(b.dataset.n, b.dataset.k, null); refresca(); };
+  });
+  caja.querySelectorAll(".js-add").forEach((sel) => {
+    sel.onchange = () => {
+      if (!sel.value) return;
+      ponPrecio(sel.dataset.n, sel.value, 1, "eur");   // se ajusta a mano al momento
+      refresca();
     };
   });
   caja.querySelectorAll("[data-desdel]").forEach((b) => {
-    b.onclick = () => { delete deseados[b.dataset.desdel]; save(DESEADOS_KEY, deseados); renderDeseados(); renderPending(); };
+    b.onclick = () => { delete deseados[b.dataset.desdel]; save(DESEADOS_KEY, deseados); refresca(); };
   });
+}
+
+/** El cambio €/¥: el tuyo manda; el automático queda como referencia. */
+function pintarTasa() {
+  const i = $("fxManual");
+  if (!i) return;
+  if (document.activeElement !== i) i.value = fxManual != null ? fxManual : "";
+  $("fxAuto").textContent = fx ? `Cambio del día: 1 € = ¥${fx.jpy.toFixed(1)}` : "Cambio del día: no disponible";
+  $("fxUsando").textContent = tasa() ? `Usando 1 € = ¥${tasa().toFixed(1)}${fxManual != null ? " (el tuyo)" : " (automático)"}` : "Sin cambio disponible";
 }
 
 function anadirDeseado() {
@@ -686,8 +807,9 @@ function anadirDeseado() {
   const nombre = cand.length && cand[0].score > 0.72 ? cand[0].name : t;
   const v = $("desPrice").value.trim();
   const num = Number(v.replace(",", "."));
-  deseados[nombre] = { eur: v && isFinite(num) && num > 0 ? num : null };
+  if (!deseados[nombre]) deseados[nombre] = { precios: {} };
   save(DESEADOS_KEY, deseados);
+  if (v && isFinite(num) && num > 0) ponPrecio(nombre, $("desIdioma").value || "any", num, $("desMoneda").value);
   $("desName").value = ""; $("desPrice").value = "";
   renderDeseados(); renderPending();
 }
@@ -816,12 +938,20 @@ async function init() {
 
   $("desBtn").onclick = () => { $("scanView").classList.add("hidden"); $("desView").classList.remove("hidden"); stopCam(); renderDeseados(); };
   $("desBack").onclick = () => { $("desView").classList.add("hidden"); $("scanView").classList.remove("hidden"); startCam(); };
+  $("desIdioma").innerHTML = Object.keys(IDIOMAS).map((k) => `<option value="${k}">${IDIOMAS[k]}</option>`).join("");
   $("desAdd").onclick = anadirDeseado;
+  $("fxManual").onchange = () => {
+    const v = Number(String($("fxManual").value).replace(",", "."));
+    fxManual = isFinite(v) && v > 0 ? v : null;
+    save(FX_MANUAL_KEY, fxManual);
+    renderDeseados(); renderPending();
+  };
+  $("fxReset").onclick = () => { fxManual = null; save(FX_MANUAL_KEY, null); $("fxManual").value = ""; renderDeseados(); renderPending(); };
   $("desName").onkeydown = (e) => { if (e.key === "Enter") anadirDeseado(); };
   $("desPrice").onkeydown = (e) => { if (e.key === "Enter") anadirDeseado(); };
   $("sesDes").onclick = () => {
     let n = 0;
-    pending.forEach((p) => { if (!enDeseados(p.name)) { deseados[p.name] = { eur: null }; n++; } });
+    pending.forEach((p) => { if (!enDeseados(p.name)) { deseados[p.name] = { precios: {} }; n++; } });
     save(DESEADOS_KEY, deseados); renderPending(); renderDeseados();
     alert(n ? `💚 ${n} carta(s) a deseados. Ponles precio máximo desde 💚 arriba.` : "Ya estaban todas en deseados.");
   };
